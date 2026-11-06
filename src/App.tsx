@@ -23,7 +23,8 @@ import {
   Check,
   RotateCcw,
   RefreshCw,
-  Globe
+  Globe,
+  Search
 } from 'lucide-react';
 
 // ==========================================
@@ -33,11 +34,21 @@ import {
 export type LanguageMode = 'auto' | 'en' | 'ur' | 'roman_ur';
 
 interface AppTarget {
+  key: string;
   name: string;
   packageName: string;
   fallbackPackage?: string;
   webFallback: string;
   keywords: string[];
+}
+
+export interface ParsedAppCommand {
+  isAppCommand: boolean;
+  app?: AppTarget;
+  searchQuery?: string;
+  searchUrl?: string;
+  speechNote?: string;
+  noSearchSupport?: boolean;
 }
 
 /**
@@ -46,18 +57,21 @@ interface AppTarget {
  */
 const APP_MAP: Record<string, AppTarget> = {
   youtube: {
+    key: 'youtube',
     name: 'YouTube',
     packageName: 'com.google.android.youtube',
     webFallback: 'https://www.youtube.com',
     keywords: ['youtube', 'yutube', 'yt', 'you tube', 'yotube', 'video', 'یوٹیوب']
   },
   whatsapp: {
+    key: 'whatsapp',
     name: 'WhatsApp',
     packageName: 'com.whatsapp',
     webFallback: 'https://web.whatsapp.com',
     keywords: ['whatsapp', 'whatsap', 'watsapp', 'watsap', 'wa', 'wtsp', 'واٹس ایپ', 'واٹسایپ']
   },
   tiktok: {
+    key: 'tiktok',
     name: 'TikTok',
     packageName: 'com.zhiliaoapp.musically',
     fallbackPackage: 'com.ss.android.ugc.trill',
@@ -65,42 +79,49 @@ const APP_MAP: Record<string, AppTarget> = {
     keywords: ['tiktok', 'tik tok', 'toktok', 'ٹک ٹاک', 'ٹک ٹوک']
   },
   telegram: {
+    key: 'telegram',
     name: 'Telegram',
     packageName: 'org.telegram.messenger',
     webFallback: 'https://web.telegram.org',
     keywords: ['telegram', 'tele', 'tg', 'ٹیلیگرام']
   },
   instagram: {
+    key: 'instagram',
     name: 'Instagram',
     packageName: 'com.instagram.android',
     webFallback: 'https://www.instagram.com',
     keywords: ['instagram', 'insta', 'ig', 'instagrem', 'انسٹاگرام', 'انسٹا']
   },
   chrome: {
+    key: 'chrome',
     name: 'Chrome',
     packageName: 'com.android.chrome',
     webFallback: 'https://www.google.com',
     keywords: ['chrome', 'browser', 'google chrome', 'chrom', 'کروم']
   },
   gemini: {
+    key: 'gemini',
     name: 'Gemini',
     packageName: 'com.google.android.apps.bard',
     webFallback: 'https://gemini.google.com',
     keywords: ['gemini', 'bard', 'google gemini', 'جیمنی']
   },
   claude: {
+    key: 'claude',
     name: 'Claude',
     packageName: 'com.anthropic.claude',
     webFallback: 'https://claude.ai',
     keywords: ['claude', 'anthropic', 'کلاڈ']
   },
   google: {
+    key: 'google',
     name: 'Google',
     packageName: 'com.google.android.googlequicksearchbox',
     webFallback: 'https://www.google.com',
     keywords: ['google', 'google app', 'search', 'گوگل']
   },
   freefire: {
+    key: 'freefire',
     name: 'Free Fire',
     packageName: 'com.dts.freefireth',
     fallbackPackage: 'com.dts.freefiremax',
@@ -108,60 +129,91 @@ const APP_MAP: Record<string, AppTarget> = {
     keywords: ['free fire', 'freefire', 'ff', 'garena free fire', 'فری فائر']
   },
   discord: {
+    key: 'discord',
     name: 'Discord',
     packageName: 'com.discord',
     webFallback: 'https://discord.com',
     keywords: ['discord', 'dc', 'diskord', 'ڈسکارڈ']
   },
   playstore: {
+    key: 'playstore',
     name: 'Play Store',
     packageName: 'com.android.vending',
     webFallback: 'https://play.google.com/store',
     keywords: ['play store', 'playstore', 'store', 'market', 'google play', 'پلے اسٹور', 'پلے سٹور']
   },
   facebook: {
+    key: 'facebook',
     name: 'Facebook',
     packageName: 'com.facebook.katana',
     webFallback: 'https://www.facebook.com',
     keywords: ['facebook', 'fb', 'facebok', 'فیس بک']
   },
+  twitter: {
+    key: 'twitter',
+    name: 'X (Twitter)',
+    packageName: 'com.twitter.android',
+    webFallback: 'https://x.com',
+    keywords: ['twitter', 'x', 'tweet', 'twiter', 'ٹویٹر', 'ٹوئٹر']
+  },
   snapchat: {
+    key: 'snapchat',
     name: 'Snapchat',
     packageName: 'com.snapchat.android',
     webFallback: 'https://www.snapchat.com',
     keywords: ['snapchat', 'snap', 'sc', 'snap chat', 'سنیپ چیٹ']
   },
   spotify: {
+    key: 'spotify',
     name: 'Spotify',
     packageName: 'com.spotify.music',
     webFallback: 'https://open.spotify.com',
     keywords: ['spotify', 'music', 'songs', 'gaane', 'spoti', 'اسپاٹائفائی']
   },
+  amazon: {
+    key: 'amazon',
+    name: 'Amazon',
+    packageName: 'com.amazon.mShop.android.shopping',
+    webFallback: 'https://www.amazon.com',
+    keywords: ['amazon', 'shopping', 'امیزون']
+  },
+  pinterest: {
+    key: 'pinterest',
+    name: 'Pinterest',
+    packageName: 'com.pinterest',
+    webFallback: 'https://www.pinterest.com',
+    keywords: ['pinterest', 'پنٹریسٹ']
+  },
   gmail: {
+    key: 'gmail',
     name: 'Gmail',
     packageName: 'com.google.android.gm',
     webFallback: 'https://mail.google.com',
     keywords: ['gmail', 'mail', 'email', 'g mail', 'جی میل']
   },
   maps: {
+    key: 'maps',
     name: 'Maps',
     packageName: 'com.google.android.apps.maps',
     webFallback: 'https://maps.google.com',
     keywords: ['maps', 'google maps', 'map', 'rasta', 'location', 'گوگل میپس', 'میپس']
   },
   camera: {
+    key: 'camera',
     name: 'Camera',
     packageName: 'com.android.camera',
     webFallback: '',
     keywords: ['camera', 'cam', 'tasveer', 'photo', 'capture', 'کیمرہ']
   },
   settings: {
+    key: 'settings',
     name: 'Settings',
     packageName: 'com.android.settings',
     webFallback: '',
     keywords: ['settings', 'setting', 'phone settings', 'system settings', 'سیٹنگز', 'سیٹنگ']
   },
   calculator: {
+    key: 'calculator',
     name: 'Calculator',
     packageName: 'com.google.android.calculator',
     webFallback: 'https://www.google.com/search?q=calculator',
@@ -169,78 +221,202 @@ const APP_MAP: Record<string, AppTarget> = {
   }
 };
 
-// Fuzzy match app name helper
-function detectAppCommand(text: string): { isAppCommand: boolean; app?: AppTarget; rawTargetName?: string } {
-  const clean = text.toLowerCase().trim();
-  if (!clean) return { isAppCommand: false };
-
-  // Triggers in English, Urdu, Hindi, Roman Urdu
-  const openTriggers = [
-    'open', 'kholo', 'khol do', 'khol de', 'chalao', 'chala do', 'run', 'launch',
-    'start', 'kholiye', 'chalu karo', 'kholna', 'shuru karo',
-    'کھولو', 'کولو', 'کھول دو', 'کھولیں', 'چلاؤ', 'چلاو', 'اوپن', 'شروع کرو'
-  ];
-
-  let target = '';
-
-  for (const trigger of openTriggers) {
-    // Starts with trigger: "open youtube", "kholo whatsapp"
-    const startPattern = new RegExp(`^${trigger}\\s+(.+)`, 'i');
-    const matchStart = clean.match(startPattern);
-    if (matchStart) {
-      target = matchStart[1].trim();
-      break;
+/**
+ * Build URL to search directly inside target app or service
+ */
+function buildAppSearchUrl(appKey: string, query: string): { url?: string; speechNote?: string; noSearchSupport?: boolean } {
+  const enc = encodeURIComponent(query.trim());
+  switch (appKey) {
+    case 'youtube':
+      return { url: `https://www.youtube.com/results?search_query=${enc}` };
+    case 'google':
+    case 'chrome':
+      return { url: `https://www.google.com/search?q=${enc}` };
+    case 'instagram':
+      return { url: `https://www.instagram.com/explore/search/keyword/?q=${enc}` };
+    case 'tiktok':
+      return { url: `https://www.tiktok.com/search?q=${enc}` };
+    case 'facebook':
+      return { url: `https://www.facebook.com/search/top?q=${enc}` };
+    case 'twitter':
+    case 'x':
+      return { url: `https://x.com/search?q=${enc}` };
+    case 'spotify':
+      return { url: `https://open.spotify.com/search/${enc}` };
+    case 'playstore':
+      return { url: `market://search?q=${enc}&c=apps` };
+    case 'maps':
+      return { url: `geo:0,0?q=${enc}` };
+    case 'amazon':
+      return { url: `https://www.amazon.com/s?k=${enc}` };
+    case 'pinterest':
+      return { url: `https://www.pinterest.com/search/pins/?q=${enc}` };
+    case 'telegram': {
+      const cleanUsername = query.trim().replace(/^@/, '').replace(/\s+/g, '');
+      return {
+        url: `tg://resolve?domain=${encodeURIComponent(cleanUsername)}`,
+        speechNote: 'Ye sirf usernames ke liye kaam karta hai.'
+      };
     }
+    case 'whatsapp':
+      return {
+        noSearchSupport: true,
+        speechNote: 'WhatsApp mein search nahi ho sakta, sirf khol sakta hoon.'
+      };
+    default:
+      return { noSearchSupport: true };
+  }
+}
 
-    // Ends with trigger: "youtube kholo", "whatsapp chalao"
-    const endPattern = new RegExp(`(.+?)\\s+(${trigger})(?:\\s+karo|\\s+do)?$`, 'i');
-    const matchEnd = clean.match(endPattern);
-    if (matchEnd) {
-      target = matchEnd[1].trim();
+/**
+ * Enhanced local app launcher and in-app search parser
+ * Understands English, Urdu, Roman Urdu commands:
+ * e.g. "open youtube and search patti bhramchari", "youtube kholo aur bhabi no 1 search karo",
+ * "youtube par XYZ search karo", "search XYZ on youtube", "instagram mein XYZ dhundo"
+ */
+function detectAppCommand(text: string): ParsedAppCommand {
+  const rawClean = text.trim();
+  if (!rawClean) return { isAppCommand: false };
+
+  const lower = rawClean.toLowerCase();
+
+  // Search words in English, Roman Urdu, Hindi, Urdu script
+  const searchWordPattern = /\b(search|serach|find|dhundo|dhoondo|dhundho|dhoondho|talash|khojo)\b|سرچ|تلاش|ڈھونڈو/i;
+  // Open triggers
+  const openTriggerPattern = /\b(open|kholo|khol\s*do|khol\s*de|kholiye|chalao|chala\s*do|launch|start|run)\b|کھولو|چلاؤ|کھول\s*دو/i;
+
+  const hasSearchWord = searchWordPattern.test(lower);
+  const hasOpenTrigger = openTriggerPattern.test(lower);
+
+  // Match against APP_MAP entries (longest keyword first)
+  const allEntries: Array<{ key: string; app: AppTarget; kw: string }> = [];
+  for (const [key, app] of Object.entries(APP_MAP)) {
+    for (const kw of app.keywords) {
+      allEntries.push({ key, app, kw });
+    }
+  }
+  allEntries.sort((a, b) => b.kw.length - a.kw.length);
+
+  let matchedAppKey: string | null = null;
+  let matchedApp: AppTarget | null = null;
+  let matchedKeyword: string | null = null;
+
+  for (const item of allEntries) {
+    const escapedKw = item.kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(?:^|[\\s.,!?;:'"\\-\\/])${escapedKw}(?:$|[\\s.,!?;:'"\\-\\/])`, 'i');
+    if (regex.test(lower)) {
+      matchedAppKey = item.key;
+      matchedApp = item.app;
+      matchedKeyword = item.kw;
       break;
     }
   }
 
-  // Also support direct app mentions
-  if (!target) {
-    for (const [_, app] of Object.entries(APP_MAP)) {
-      for (const kw of app.keywords) {
-        if (clean === kw || clean === `open ${kw}` || clean === `${kw} kholo` || clean === `${kw} open` || clean === `${kw} chalao`) {
-          return { isAppCommand: true, app };
+  // If no known app found, check if it's an open command for an unlisted app
+  if (!matchedApp) {
+    if (hasOpenTrigger && !hasSearchWord) {
+      const openMatches = lower.match(/(?:open|kholo|chalao|launch)\s+([a-zA-Z0-9_\-\s]+)/i);
+      if (openMatches && openMatches[1]) {
+        let candidate = openMatches[1].trim();
+        candidate = candidate.replace(/\s+(kholo|chalao|karo|please)$/i, '').trim();
+        if (candidate) {
+          const displayName = candidate.charAt(0).toUpperCase() + candidate.slice(1);
+          return {
+            isAppCommand: true,
+            app: {
+              key: candidate.toLowerCase(),
+              name: displayName,
+              packageName: `search:${candidate}`,
+              webFallback: `https://play.google.com/store/search?q=${encodeURIComponent(candidate)}&c=apps`,
+              keywords: [candidate]
+            }
+          };
         }
       }
     }
     return { isAppCommand: false };
   }
 
-  // Remove common punctuation and filler words
-  target = target
-    .replace(/^(the|app|application|please|mera|meri|apna|apni|yeh|ye|woh|wo)\s+/i, '')
-    .replace(/\s+(the|app|application|please|karo|do)$/i, '')
-    .trim();
+  // App is identified!
+  // If no search word exists, it's a simple open command
+  if (!hasSearchWord) {
+    return {
+      isAppCommand: true,
+      app: matchedApp
+    };
+  }
 
-  // Try matching against APP_MAP keywords
-  for (const [_, app] of Object.entries(APP_MAP)) {
-    for (const kw of app.keywords) {
-      const cleanTarget = target.replace(/\s+/g, '');
-      const cleanKw = kw.replace(/\s+/g, '');
-      if (target === kw || cleanTarget === cleanKw || target.includes(kw) || kw.includes(target)) {
-        return { isAppCommand: true, app };
-      }
+  // Search word IS present! Extract query
+  // Mark app keyword with placeholder __TARGET_APP__
+  const escapedKw = matchedKeyword!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const kwRegex = new RegExp(`(?:^|[\\s.,!?;:'"\\-\\/])${escapedKw}(?:$|[\\s.,!?;:'"\\-\\/])`, 'i');
+  const textWithMarker = lower.replace(kwRegex, (m) => m.replace(new RegExp(escapedKw, 'i'), '__TARGET_APP__'));
+
+  let extractedQuery = '';
+
+  // Pattern A: search <QUERY> on/in __TARGET_APP__
+  const pA = /(?:search|serach|find|dhundo|dhoondo|dhundho|talash|khojo|سرچ|تلاش|ڈھونڈو)\s+(?:for\s+)?(.+?)\s+(?:on|in|par|mein|me|pe|se)\s+__TARGET_APP__/i;
+  const mA = textWithMarker.match(pA);
+  if (mA && mA[1]) {
+    extractedQuery = mA[1];
+  }
+
+  // Pattern B: __TARGET_APP__ (kholo/open)? (aur/and)? (par/mein)? <QUERY> (ko)? (search/dhundo) (karo)?
+  // e.g. "__TARGET_APP__ par bhabi no 1 search karo", "__TARGET_APP__ mein XYZ dhundo"
+  if (!extractedQuery) {
+    const pB = /__TARGET_APP__\s*(?:kholo|open|chalao)?\s*(?:and|aur)?\s*(?:par|mein|me|on|in|pe|se)?\s*(.+?)\s*(?:ko\s*)?(?:search|serach|find|dhundo|dhoondo|dhundho|talash|khojo|سرچ|تلاش|ڈھونڈو)(?:\s*(?:karo|kar\s*do|karna|kariye|please))?$/i;
+    const mB = textWithMarker.match(pB);
+    if (mB && mB[1]) {
+      extractedQuery = mB[1];
     }
   }
 
-  // Fallback for apps not explicitly in APP_MAP: search in Google Play Store
-  const displayName = target.charAt(0).toUpperCase() + target.slice(1);
+  // Pattern C: __TARGET_APP__ ... (search/dhundo) <QUERY>
+  // e.g. "open __TARGET_APP__ and search patti bhramchari"
+  if (!extractedQuery) {
+    const pC = /__TARGET_APP__.*?(?:search|serach|find|dhundo|dhoondo|dhundho|talash|khojo|سرچ|تلاش|ڈھونڈو)\s*(?:for\s*)?(.+)/i;
+    const mC = textWithMarker.match(pC);
+    if (mC && mC[1]) {
+      extractedQuery = mC[1];
+    }
+  }
+
+  // Pattern D: Generic fallback if search word exists
+  if (!extractedQuery) {
+    let fallback = textWithMarker
+      .replace(/__TARGET_APP__/gi, ' ')
+      .replace(/\b(open|kholo|khol\s*do|chalao|launch|run|start)\b/gi, ' ')
+      .replace(/\b(search|serach|find|dhundo|dhoondo|dhundho|talash|khojo)\b|سرچ|تلاش|ڈھونڈو/gi, ' ')
+      .replace(/\b(and|aur|phir|then|par|mein|me|on|in|pe|se|ko|karo|kar\s*do|karna|please|for)\b/gi, ' ');
+    extractedQuery = fallback;
+  }
+
+  // Clean filler words and punctuation from extracted query
+  extractedQuery = extractedQuery
+    .replace(/^(and|aur|for|ke\s*liye|par|mein|me|on|in|karo|do|please)\s+/i, '')
+    .replace(/\s+(karo|kar\s*do|karna|please|do|kariye)$/i, '')
+    .replace(/[?!.,;:'"“”‘’]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // If query is empty, treat as pure open
+  if (!extractedQuery) {
+    return {
+      isAppCommand: true,
+      app: matchedApp
+    };
+  }
+
+  // Build the app search URL
+  const searchInfo = buildAppSearchUrl(matchedAppKey!, extractedQuery);
+
   return {
     isAppCommand: true,
-    rawTargetName: target,
-    app: {
-      name: displayName,
-      packageName: `search:${target}`,
-      webFallback: `https://play.google.com/store/search?q=${encodeURIComponent(target)}&c=apps`,
-      keywords: [target]
-    }
+    app: matchedApp,
+    searchQuery: extractedQuery,
+    searchUrl: searchInfo.url,
+    speechNote: searchInfo.speechNote,
+    noSearchSupport: searchInfo.noSearchSupport
   };
 }
 
@@ -346,7 +522,12 @@ interface CapacitorWindow {
   };
 }
 
-// Helpers for speech cleaning and foreign script detection
+// Helpers for speech cleaning and script detection
+function hasUrduScript(text: string): boolean {
+  // Matches Arabic / Urdu / Perso-Arabic unicode range
+  return /[\u0600-\u06FF]/.test(text);
+}
+
 function hasForeignScript(text: string): boolean {
   // Matches Korean, Chinese, Japanese, Cyrillic, Thai
   return /[\uAC00-\uD7AF\u1100-\u11FF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\u0400-\u04FF\u0E00-\u0E7F]/.test(text);
@@ -608,6 +789,8 @@ interface Message {
   text: string;
   timestamp: string;
   appAction?: AppTarget;
+  searchQuery?: string;
+  searchUrl?: string;
   isVoiceInput?: boolean;
 }
 
@@ -648,8 +831,9 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
-  // Audio recording & Speech refs
+  // Audio recording & Speech refs (always create a fresh stream, release immediately on finger release)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const currentStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const isHoldingMicRef = useRef<boolean>(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -860,7 +1044,8 @@ export default function App() {
 
   // Speak every reply automatically: Native Capacitor TTS first, fallback to browser speechSynthesis
   const speakReply = useCallback(async (text: string) => {
-    if (isMutedRef.current || isListening) return;
+    // Only check mute - do NOT block on isListening or any mic active flag
+    if (isMutedRef.current) return;
 
     const cleanText = cleanTextForSpeech(text);
     if (!cleanText) return;
@@ -874,14 +1059,13 @@ export default function App() {
 
     const { lang, fallbackLang } = getSpeechLanguage(cleanText, selectedLangMode);
 
-    setIsSpeaking(true);
+    const performSpeak = async (): Promise<boolean> => {
+      setIsSpeaking(true);
+      const win = window as unknown as CapacitorWindow;
+      const TTS = win.Capacitor?.Plugins?.TextToSpeech;
 
-    const win = window as unknown as CapacitorWindow;
-    const TTS = win.Capacitor?.Plugins?.TextToSpeech;
-
-    try {
       if (TTS && typeof TTS.speak === 'function') {
-        // Primary: Native Capacitor TextToSpeech plugin in Android WebView
+        // Native Capacitor TextToSpeech plugin in Android WebView with category "playback"
         for (const chunk of chunks) {
           if (speechSessionIdRef.current !== sessionId || isMutedRef.current) break;
           try {
@@ -896,24 +1080,20 @@ export default function App() {
           } catch (ttsErr) {
             console.warn(`Native TTS error with lang ${lang}, attempting fallback...`, ttsErr);
             if (fallbackLang) {
-              try {
-                await TTS.speak({
-                  text: chunk,
-                  lang: fallbackLang,
-                  rate: 1.0,
-                  pitch: 1.1,
-                  volume: 1.0,
-                  category: 'playback'
-                });
-              } catch (fallbackErr) {
-                console.warn('Native TTS fallback failed:', fallbackErr);
-                break;
-              }
+              await TTS.speak({
+                text: chunk,
+                lang: fallbackLang,
+                rate: 1.0,
+                pitch: 1.1,
+                volume: 1.0,
+                category: 'playback'
+              });
             } else {
-              break;
+              throw ttsErr;
             }
           }
         }
+        return true;
       } else if ('speechSynthesis' in window) {
         // Fallback: browser SpeechSynthesis
         const voices = window.speechSynthesis.getVoices();
@@ -927,7 +1107,7 @@ export default function App() {
         for (const chunk of chunks) {
           if (speechSessionIdRef.current !== sessionId || isMutedRef.current) break;
 
-          await new Promise<void>((resolve) => {
+          await new Promise<void>((resolve, reject) => {
             const utterance = new SpeechSynthesisUtterance(chunk);
             currentUtteranceRef.current = utterance;
             utterance.lang = lang;
@@ -938,40 +1118,74 @@ export default function App() {
               currentUtteranceRef.current = null;
               resolve();
             };
-            utterance.onerror = () => {
+            utterance.onerror = (e) => {
               currentUtteranceRef.current = null;
-              resolve();
+              reject(e);
             };
             window.speechSynthesis.speak(utterance);
           });
         }
+        return true;
       }
+      return false;
+    };
+
+    try {
+      await performSpeak();
     } catch (err) {
-      console.warn('Speech playback error:', err);
+      console.warn('Speech attempt failed, retrying once after 800 ms...', err);
+      // Problem 1: If speaking fails, retry once after 800 ms
+      if (speechSessionIdRef.current === sessionId && !isMutedRef.current) {
+        await new Promise(r => setTimeout(r, 800));
+        if (speechSessionIdRef.current === sessionId && !isMutedRef.current) {
+          try {
+            await performSpeak();
+          } catch (retryErr) {
+            console.warn('Speech retry failed:', retryErr);
+          }
+        }
+      }
     } finally {
       if (speechSessionIdRef.current === sessionId) {
         setIsSpeaking(false);
       }
     }
-  }, [isListening, selectedLangMode, stopSpeaking]);
+  }, [selectedLangMode, stopSpeaking]);
 
-  // Launch phone app directly using Capacitor AppLauncher without importing
-  const executeAppLaunch = async (app: AppTarget): Promise<{ success: boolean; notInstalled?: boolean }> => {
+  // Launch phone app directly or open in-app search URL using Capacitor AppLauncher
+  const executeAppLaunch = async (app: AppTarget, customUrl?: string): Promise<{ success: boolean; notInstalled?: boolean }> => {
     playChime('gadget');
 
-    const win = window as unknown as {
-      Capacitor?: {
-        Plugins?: {
-          AppLauncher?: {
-            canOpenUrl: (opts: { url: string }) => Promise<{ value: boolean }>;
-            openUrl: (opts: { url: string }) => Promise<{ completed: boolean }>;
-          };
-        };
-      };
-    };
-
+    const win = window as unknown as CapacitorWindow;
     const AL = win.Capacitor?.Plugins?.AppLauncher;
 
+    // If customUrl is provided (for in-app search like YouTube query, Google query, Maps query, etc.)
+    if (customUrl) {
+      if (AL && typeof AL.openUrl === 'function') {
+        try {
+          await AL.openUrl({ url: customUrl });
+          return { success: true };
+        } catch (e) {
+          console.warn('AppLauncher openUrl customUrl error:', e);
+          try {
+            window.open(customUrl, '_system');
+            return { success: true };
+          } catch {
+            window.open(customUrl, '_blank');
+            return { success: true };
+          }
+        }
+      }
+      // Standard browser fallback
+      try {
+        window.open(customUrl, '_blank');
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
+    }
+
+    // Standard app launch via package name
     if (AL && typeof AL.canOpenUrl === 'function' && typeof AL.openUrl === 'function') {
       try {
         // 1) Test primary package name
@@ -1040,36 +1254,100 @@ export default function App() {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Problem 3 / App Command: Open Phone App Command
+    // Problem 1: After recording stops, wait 400ms before speaking reply so microphone is fully released
+    const speakDoraemonReply = (textToSpeak: string, customDelayMs?: number) => {
+      const delay = customDelayMs !== undefined ? customDelayMs : (wasSpoken ? 400 : 0);
+      if (delay > 0) {
+        setTimeout(() => {
+          speakReply(textToSpeak);
+        }, delay);
+      } else {
+        speakReply(textToSpeak);
+      }
+    };
+
+    // Feature: Open App and In-App Search Command
     const appDetection = detectAppCommand(rawText);
     if (appDetection.isAppCommand && appDetection.app) {
       // 1. MUST set isBusy=false first (do NOT show thinking bubble, do NOT call AI model)
       setIsBusy(false);
 
       const app = appDetection.app;
-      const doraReplyText = `Theek hai Nobita, ${app.name} khol raha hoon! 🚀`;
+      const isUrdu = hasUrduScript(rawText) || selectedLangMode === 'ur';
+      const isEnglish = selectedLangMode === 'en' || (
+        /^[a-zA-Z0-9\s.,!?'"-_]+$/.test(rawText) &&
+        !/\b(kholo|chalao|karo|batao|dhundo|dhoondo|talash|khojo|hai|kaise|kya|aur|mein|me|par|pe|se)\b/i.test(rawText)
+      );
+
+      let doraReplyText = '';
+
+      if (appDetection.searchQuery) {
+        // App search command
+        if (appDetection.speechNote) {
+          // Special cases like WhatsApp (no search support) or Telegram (usernames only)
+          if (app.key === 'whatsapp') {
+            doraReplyText = isUrdu
+              ? 'واٹس ایپ میں سرچ نہیں ہو سکتا، صرف کھول سکتا ہوں نوبیتا!'
+              : (isEnglish
+                ? "Nobita, WhatsApp doesn't support in-app search, opening WhatsApp for you!"
+                : 'WhatsApp mein search nahi ho sakta, sirf khol sakta hoon Nobita!');
+          } else if (app.key === 'telegram') {
+            doraReplyText = isUrdu
+              ? `ٹھیک ہے نوبیتا، ٹیلیگرام پر '${appDetection.searchQuery}' تلاش کر رہا ہوں۔ یہ صرف یوزر نیم کے لیے کام کرتا ہے!`
+              : (isEnglish
+                ? `Sure Nobita, searching '${appDetection.searchQuery}' on Telegram! This only works for usernames.`
+                : `Theek hai Nobita, Telegram par '${appDetection.searchQuery}' search kar raha hoon! Ye sirf usernames ke liye kaam karta hai.`);
+          } else {
+            doraReplyText = appDetection.speechNote;
+          }
+        } else {
+          // Standard in-app search
+          if (isUrdu) {
+            doraReplyText = `ٹھیک ہے نوبیتا، ${app.name} پر '${appDetection.searchQuery}' تلاش کر رہا ہوں! 🔍`;
+          } else if (isEnglish) {
+            doraReplyText = `Sure Nobita, searching '${appDetection.searchQuery}' on ${app.name}! 🔍`;
+          } else {
+            doraReplyText = `Theek hai Nobita, ${app.name} par '${appDetection.searchQuery}' search kar raha hoon! 🔍`;
+          }
+        }
+      } else {
+        // Simple app launch
+        if (isUrdu) {
+          doraReplyText = `ٹھیک ہے نوبیتا، ${app.name} کھول رہا ہوں! 🚀`;
+        } else if (isEnglish) {
+          doraReplyText = `Sure Nobita, opening ${app.name}! 🚀`;
+        } else {
+          doraReplyText = `Theek hai Nobita, ${app.name} khol raha hoon! 🚀`;
+        }
+      }
 
       const doraMsg: Message = {
         id: 'msg-' + (Date.now() + 1),
         sender: 'doraemon',
         text: doraReplyText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        appAction: app
+        appAction: app,
+        searchQuery: appDetection.searchQuery,
+        searchUrl: appDetection.searchUrl
       };
 
       setMessages(prev => [...prev, doraMsg]);
       playChime('gadget');
 
-      // Speak confirmation
-      speakReply(doraReplyText);
+      // Doraemon speaks first (waiting 400ms if voice input)
+      speakDoraemonReply(doraReplyText);
 
-      // Speak for about 1.5 seconds, then open the app with AppLauncher plugin
+      // Opens it after ~1.2 seconds
+      const launchDelay = (wasSpoken ? 400 : 0) + 1200;
       setTimeout(async () => {
-        const result = await executeAppLaunch(app);
+        const result = await executeAppLaunch(app, appDetection.searchUrl);
         if (result.notInstalled) {
-          speakReply('Ye app phone mein install nahi mila');
+          const notInstalledVoice = isUrdu
+            ? 'یہ ایپ فون میں انسٹال نہیں ملی نوبیتا'
+            : (isEnglish ? 'This app was not found on your phone' : 'Ye app phone mein install nahi mila');
+          speakReply(notInstalledVoice);
         }
-      }, 1500);
+      }, launchDelay);
 
       // IMPORTANT: Return immediately, NEVER send open app command to the AI model!
       return;
@@ -1090,7 +1368,7 @@ export default function App() {
 
       setMessages(prev => [...prev, doraMsg]);
       playChime('bell');
-      speakReply(doraReplyText);
+      speakDoraemonReply(doraReplyText);
 
       return;
     }
@@ -1106,7 +1384,7 @@ export default function App() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, doraMsg]);
-      speakReply(errorText);
+      speakDoraemonReply(errorText);
       setIsSettingsOpen(true);
       return;
     }
@@ -1225,7 +1503,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
       };
       setMessages(prev => [...prev, doraMsg]);
       playChime('gadget');
-      speakReply(reply);
+      speakDoraemonReply(reply);
 
     } catch (err: unknown) {
       if (timedOut) {
@@ -1237,7 +1515,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
         setMessages(prev => [...prev, errorMsg]);
-        speakReply(timeoutMsg);
+        speakDoraemonReply(timeoutMsg);
         return;
       }
 
@@ -1261,7 +1539,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errorMsg]);
-      speakReply(friendlyError);
+      speakDoraemonReply(friendlyError);
     } finally {
       clearTimeout(timeoutId);
       if (chatAbortControllerRef.current === controller) {
@@ -1286,8 +1564,28 @@ Reply ONLY in the language the user last used. English message -> English reply.
       return;
     }
 
+    // Clean up any stale tracks from previous stream to guarantee a fresh stream
+    if (currentStreamRef.current) {
+      try {
+        currentStreamRef.current.getTracks().forEach(t => {
+          try { t.stop(); } catch {}
+        });
+      } catch {}
+      currentStreamRef.current = null;
+    }
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch {}
+      mediaRecorderRef.current = null;
+    }
+
     try {
+      // Create a fresh getUserMedia stream for each press
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      currentStreamRef.current = stream;
       audioChunksRef.current = [];
 
       // Determine mimeType supported by browser
@@ -1320,23 +1618,47 @@ Reply ONLY in the language the user last used. English message -> English reply.
       alert('Microphone permission zaroori hai voice sunne ke liye!');
       setIsListening(false);
       isHoldingMicRef.current = false;
+      currentStreamRef.current = null;
+      mediaRecorderRef.current = null;
     }
   };
 
   const stopRecordingAndTranscribe = () => {
-    if (!isHoldingMicRef.current || !mediaRecorderRef.current) return;
+    if (!isHoldingMicRef.current && !mediaRecorderRef.current) return;
+    // Reset all mic/listening flags immediately
     isHoldingMicRef.current = false;
     setIsListening(false);
 
+    const stream = currentStreamRef.current;
     const recorder = mediaRecorderRef.current;
-    if (recorder.state === 'recording') {
-      recorder.onstop = async () => {
-        // Stop all audio tracks
-        recorder.stream.getTracks().forEach(track => track.stop());
 
+    // Immediately call track.stop() on EVERY track of the getUserMedia stream
+    if (stream) {
+      try {
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {
+            console.warn('Track stop error:', e);
+          }
+        });
+      } catch (e) {
+        console.warn('Stream tracks stop error:', e);
+      }
+    }
+    // Set stream = null and mediaRecorder = null immediately so microphone is fully released
+    currentStreamRef.current = null;
+    mediaRecorderRef.current = null;
+
+    if (!recorder) return;
+
+    if (recorder.state === 'recording' || recorder.state === 'paused') {
+      recorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
         if (audioBlob.size < 500) {
           // Too short or empty
+          setIsBusy(false);
           return;
         }
 
@@ -1359,7 +1681,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
           const activeWhisper = selectedWhisperModel || localStorage.getItem('groq_whisper_model') || 'whisper-large-v3-turbo';
           let transcript = '';
 
-          // Problem B: Language-controlled transcription
+          // Language-controlled transcription
           if (selectedLangMode === 'en') {
             const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en', undefined, controller.signal);
             transcript = cleanTranscriptionText(res.text);
@@ -1421,7 +1743,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
           clearTimeout(timeoutId);
 
           if (transcript) {
-            // Trigger send message with voice input flag
+            // Trigger send message with voice input flag (wasSpoken = true)
             handleSendMessage(transcript, true);
           } else {
             setIsBusy(false);
@@ -1441,7 +1763,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               }
             ]);
-            speakReply(timeoutMsg);
+            setTimeout(() => speakReply(timeoutMsg), 400);
             return;
           }
 
@@ -1461,7 +1783,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }
           ]);
-          speakReply(errText);
+          setTimeout(() => speakReply(errText), 400);
         } finally {
           clearTimeout(timeoutId);
           if (chatAbortControllerRef.current === controller) {
@@ -1470,7 +1792,11 @@ Reply ONLY in the language the user last used. English message -> English reply.
         }
       };
 
-      recorder.stop();
+      try {
+        recorder.stop();
+      } catch (e) {
+        console.warn('Recorder stop error:', e);
+      }
     }
   };
 
@@ -1713,12 +2039,14 @@ Reply ONLY in the language the user last used. English message -> English reply.
       {/* QUICK SUGGESTIONS CAROUSEL */}
       <div className="relative z-10 w-full max-w-4xl mx-auto px-4 py-1 flex items-center gap-2 overflow-x-auto no-scrollbar">
         {[
+          'YouTube par bhabi no 1 search karo',
+          'Instagram mein nature dhundo',
+          'open youtube and search music',
           'Tumhe kisne banaya?',
           'Which company made you?',
-          'YouTube kholo',
+          'Google Maps kholo',
           'WhatsApp chalao',
-          'Free Fire kholo',
-          'Google Maps kholo'
+          'Free Fire kholo'
         ].map((prompt, idx) => (
           <button
             key={idx}
@@ -1770,27 +2098,34 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   {msg.text}
                 </p>
 
-                {/* Problem A: Automatic App Launcher Card with only a small 'Dobara koshish' fallback */}
+                {/* Automatic App Launcher / In-App Search Card */}
                 {msg.appAction && (
-                  <div className="mt-2.5 p-2 px-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-7 h-7 rounded-lg bg-[#0AA1DD] text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <Smartphone className="w-4 h-4" />
+                  <div className="mt-2.5 p-2.5 px-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-2 shadow-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-8 h-8 rounded-lg bg-[#0AA1DD] text-white flex items-center justify-center shrink-0 shadow-xs">
+                        {msg.searchQuery ? <Search className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
                       </span>
-                      <div className="truncate">
+                      <div className="min-w-0">
                         <div className="text-xs font-bold text-slate-800 truncate">{msg.appAction.name}</div>
-                        <div className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                          App khol diya gaya hai
-                        </div>
+                        {msg.searchQuery ? (
+                          <div className="text-[11px] text-sky-800 font-medium flex items-center gap-1 truncate">
+                            <span className="text-slate-500">Khoja:</span>
+                            <span className="font-semibold truncate text-[#0AA1DD]">"{msg.searchQuery}"</span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                            App khol diya gaya hai
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
-                        onClick={() => executeAppLaunch(msg.appAction!)}
+                        onClick={() => executeAppLaunch(msg.appAction!, msg.searchUrl)}
                         className="py-1 px-2.5 rounded-lg bg-white border border-sky-300 text-sky-800 text-[11px] font-bold hover:bg-sky-100 active:scale-95 transition shadow-xs flex items-center gap-1"
-                        title="Agar app nahi khula to dobara koshish karein"
+                        title={msg.searchQuery ? 'Search dobara chalayein' : 'Agar app nahi khula to dobara koshish karein'}
                       >
                         <RotateCcw className="w-3 h-3 text-[#0AA1DD]" />
                         <span>Dobara koshish</span>
