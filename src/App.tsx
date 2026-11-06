@@ -244,6 +244,108 @@ function detectAppCommand(text: string): { isAppCommand: boolean; app?: AppTarge
   };
 }
 
+/**
+ * Detect Creator and Company attribution questions locally:
+ * If asked who made/created you (any language) -> "Mujhe TG ne banaya hai." (English: "I was made by TG.")
+ * If asked which company made you -> "TG_META.DOREMON_AI_JARVIS"
+ */
+function detectCreatorQuestion(rawText: string, langMode: LanguageMode): { isCreatorQuestion: boolean; reply?: string } {
+  const clean = rawText
+    .toLowerCase()
+    .replace(/[?!.,;:'"\/\\()\[\]{}~`*_#-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // 1. Check Company questions first
+  const companyPatterns = [
+    /\b(which|what)\s+company\b/i,
+    /\bcompany\s+(made|created|built|developed|owns?|belong)\b/i,
+    /\b(kis|konsi|kounsi|kaun\s*si|konsa|kaunsa)\s+company\b/i,
+    /\bcompany\s+ka\s+naam\b/i,
+    /\bcompany\s+ne\s+(banaya|create|develop)\b/i,
+    /\bcompany\s+batao\b/i,
+    /\bkis\s+company\s+(ka|ki|ke|se)\b/i,
+    /کس\s*کمپنی/,
+    /کون\s*سی\s*کمپنی/
+  ];
+
+  for (const pattern of companyPatterns) {
+    if (pattern.test(clean)) {
+      return {
+        isCreatorQuestion: true,
+        reply: 'TG_META.DOREMON_AI_JARVIS'
+      };
+    }
+  }
+
+  // 2. Check Creator / Maker questions
+  const creatorPatterns = [
+    /\bwho\s+(made|created|built|developed|invented|programmed|designed)\s+(you|u|this|doraemon|jarvis)\b/i,
+    /\bwho\s+is\s+your\s+(creator|maker|developer|author|programmer|owner|boss|builder|inventor)\b/i,
+    /\bwho\s+made\s+(you|u|this|doraemon|jarvis)\b/i,
+    /\bwho\s+created\s+(you|u|this)\b/i,
+    /\b(kisne|kis\s+ne|kine)\s+(banaya|bnaya|banaye|banya)\b/i,
+    /\b(tumhe|tumhein|tumko|apko|aapko|aap\s+ko|tere\s+ko|tujhe)\s+kisne\s+banaya\b/i,
+    /\b(tumhe|tumhein|tumko|apko|aapko|aap\s+ko)\s+kis\s+ne\s+banaya\b/i,
+    /\b(tumhe|tumhein|tumko|apko|aapko|aap\s+ko)\s+kisne\s+(create|develop|build|design)\s*(kiya)?\b/i,
+    /\b(tumhara|aapka|apka)\s+(creator|maker|malik|owner)\s+(kaun|kon|koun)\s*(hai)?\b/i,
+    /\b(creator|maker)\s+(kaun|kon|koun)\s+hai\b/i,
+    /\bkisne\s+(create|develop|invent)\s+kiya\b/i,
+    /\bwho\s+(are\s+you\s+made\s+by|were\s+you\s+made\s+by)\b/i,
+    /کس\s*نے\s*بنایا/,
+    /خالق\s*کون/,
+    /کس\s*نے\s*تخلیق/
+  ];
+
+  for (const pattern of creatorPatterns) {
+    if (pattern.test(clean)) {
+      const isEnglishQuery = /\b(who|made|created|creator|built|developed|invented|programmed|designed)\b/i.test(clean) && !/\b(kisne|banaya|tumhe|aapko|kaun|hai|apko)\b/i.test(clean);
+      if (langMode === 'en' || isEnglishQuery) {
+        return {
+          isCreatorQuestion: true,
+          reply: 'I was made by TG.'
+        };
+      }
+      return {
+        isCreatorQuestion: true,
+        reply: 'Mujhe TG ne banaya hai.'
+      };
+    }
+  }
+
+  return { isCreatorQuestion: false };
+}
+
+// Capacitor Window interface for native plugins without direct imports
+interface CapacitorWindow {
+  Capacitor?: {
+    Plugins?: {
+      AppLauncher?: {
+        canOpenUrl: (opts: { url: string }) => Promise<{ value: boolean }>;
+        openUrl: (opts: { url: string }) => Promise<{ completed: boolean }>;
+      };
+      TextToSpeech?: {
+        speak: (options: {
+          text: string;
+          lang?: string;
+          rate?: number;
+          pitch?: number;
+          volume?: number;
+          category?: string;
+        }) => Promise<void>;
+        stop: () => Promise<void>;
+        getSupportedLanguages?: () => Promise<{ languages: string[] }>;
+      };
+      App?: {
+        addListener: (
+          eventName: string,
+          listenerFunc: (state: { isActive: boolean }) => void
+        ) => Promise<{ remove: () => void }>;
+      };
+    };
+  };
+}
+
 // Helpers for speech cleaning and foreign script detection
 function hasForeignScript(text: string): boolean {
   // Matches Korean, Chinese, Japanese, Cyrillic, Thai
@@ -256,13 +358,106 @@ function cleanTranscriptionText(text: string): string {
     .trim();
 }
 
-// Whisper audio request helper
+/**
+ * Clean text thoroughly before sending to TTS:
+ * Removes emojis, markdown symbols (*, #, `, _, ~), code blocks, and URLs.
+ */
+function cleanTextForSpeech(text: string): string {
+  return text
+    // Remove markdown code blocks ```...```
+    .replace(/```[\s\S]*?```/g, ' ')
+    // Remove inline code `...`
+    .replace(/`[^`]*`/g, ' ')
+    // Remove URLs
+    .replace(/https?:\/\/\S+/g, ' ')
+    // Remove markdown symbols: *, #, _, ~, >, [, ], (, )
+    .replace(/[*#_~>[\]()]/g, ' ')
+    // Remove emojis & misc symbols
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}]/gu, ' ')
+    // Collapse excess whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Splits text into chunks of ~200 characters sequentially
+ */
+function splitIntoSpeechChunks(text: string, maxChunkLength: number = 200): string[] {
+  if (!text) return [];
+  if (text.length <= maxChunkLength) return [text];
+
+  // Match sentences or clauses including Urdu punctuation (۔ ،)
+  const sentences = text.match(/[^.!?\n،۔]+[.!?\n،۔]+|[^.!?\n،۔]+$/g) || [text];
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    const s = sentence.trim();
+    if (!s) continue;
+    if ((current + ' ' + s).trim().length <= maxChunkLength) {
+      current = (current + ' ' + s).trim();
+    } else {
+      if (current) chunks.push(current);
+      if (s.length <= maxChunkLength) {
+        current = s;
+      } else {
+        // Split long sentence by word boundaries
+        const words = s.split(/\s+/);
+        let wordChunk = '';
+        for (const w of words) {
+          if ((wordChunk + ' ' + w).trim().length <= maxChunkLength) {
+            wordChunk = (wordChunk + ' ' + w).trim();
+          } else {
+            if (wordChunk) chunks.push(wordChunk);
+            wordChunk = w;
+          }
+        }
+        current = wordChunk;
+      }
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.filter(c => c.length > 0);
+}
+
+/**
+ * Determine speech language based on language mode & script
+ * English -> en-US, Urdu script -> ur-PK (fallback hi-IN), Roman Urdu/Hinglish -> hi-IN
+ */
+function getSpeechLanguage(text: string, mode: LanguageMode): { lang: string; fallbackLang?: string } {
+  const isUrduScript = /[\u0600-\u06FF]/.test(text);
+
+  if (mode === 'en') {
+    return { lang: 'en-US' };
+  }
+  if (mode === 'ur') {
+    return { lang: 'ur-PK', fallbackLang: 'hi-IN' };
+  }
+  if (mode === 'roman_ur') {
+    return { lang: 'hi-IN' };
+  }
+
+  // Auto mode
+  if (isUrduScript) {
+    return { lang: 'ur-PK', fallbackLang: 'hi-IN' };
+  }
+
+  const isRomanUrdu = /\b(kya|hai|hain|nobita|dost|arre|chalo|khol|kholo|chalao|main|hoon|kaun|kahan|kaise|theek|madad|batao|gadget|mera|meri|aaya|tum|shukriya|accha|bhai|nahi|karo|dekho|sun|raha)\b/i.test(text);
+  if (isRomanUrdu) {
+    return { lang: 'hi-IN' };
+  }
+
+  return { lang: 'en-US' };
+}
+
+// Whisper audio request helper with AbortSignal support
 async function requestGroqWhisper(
   audioBlob: Blob,
   key: string,
   model: string,
   lang?: string,
-  prompt?: string
+  prompt?: string,
+  signal?: AbortSignal
 ): Promise<{ text: string; language?: string }> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.webm');
@@ -281,7 +476,8 @@ async function requestGroqWhisper(
     headers: {
       'Authorization': `Bearer ${key.trim()}`
     },
-    body: formData
+    body: formData,
+    signal
   });
 
   if (!res.ok) {
@@ -447,19 +643,73 @@ export default function App() {
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState<string>('');
-  const [isThinking, setIsThinking] = useState<boolean>(false);
+  const [isBusy, setIsBusy] = useState<boolean>(false);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
-  // Audio recording refs
+  // Audio recording & Speech refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const isHoldingMicRef = useRef<boolean>(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const speechSessionIdRef = useRef<number>(0);
+  const isMutedRef = useRef<boolean>(isMuted);
+
+  // Request timeout & cancellation ref (25s timeout for chat & whisper)
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
 
   // Chat scroll container ref
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep isMutedRef in sync with isMuted
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  // Foreground & App resume listener: reset isBusy and cancel pending requests
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (chatAbortControllerRef.current) {
+          chatAbortControllerRef.current.abort('foreground_resume');
+          chatAbortControllerRef.current = null;
+        }
+        setIsBusy(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const win = window as unknown as CapacitorWindow;
+    let appListenerHandle: { remove: () => void } | null = null;
+    const AppPlugin = win.Capacitor?.Plugins?.App;
+
+    if (AppPlugin && typeof AppPlugin.addListener === 'function') {
+      try {
+        AppPlugin.addListener('appStateChange', (state: { isActive: boolean }) => {
+          if (state.isActive) {
+            if (chatAbortControllerRef.current) {
+              chatAbortControllerRef.current.abort('app_resume');
+              chatAbortControllerRef.current = null;
+            }
+            setIsBusy(false);
+          }
+        }).then(handle => {
+          appListenerHandle = handle;
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('Capacitor App listener error:', err);
+      }
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (appListenerHandle && typeof appListenerHandle.remove === 'function') {
+        appListenerHandle.remove();
+      }
+    };
+  }, []);
 
   // Refresh Groq models list and update selection
   const refreshModels = useCallback(async (key: string, keepModel?: string): Promise<{ chatModels: string[]; chosenChat: string; whisper: string } | null> => {
@@ -581,105 +831,129 @@ export default function App() {
   };
 
   // ==========================================
-  // FEATURE 4: VOICE REPLY (Speech Synthesis)
+  // FEATURE 4: AUTO VOICE REPLY (Native TTS + SpeechSynthesis Fallback)
   // ==========================================
-  const speakReply = useCallback((text: string) => {
-    if (isMuted || !('speechSynthesis' in window)) return;
-
-    window.speechSynthesis.cancel();
-
-    // Clean emojis & formatting for smoother speech
-    const cleanSpeech = text
-      .replace(/[*#_~`[\]()🐱🔔🎮🚀✨⚠️✅]/g, '')
-      .replace(/https?:\/\/\S+/g, '')
-      .trim();
-
-    if (!cleanSpeech) return;
-
-    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
-    currentUtteranceRef.current = utterance;
-
-    const voices = window.speechSynthesis.getVoices();
-    const hasUrduVoice = voices.find(v => v.lang.toLowerCase().startsWith('ur'));
-    const hasHindiVoice = voices.find(v => v.lang.toLowerCase().startsWith('hi'));
-    const hasEnglishVoice = voices.find(v => v.lang.toLowerCase().startsWith('en'));
-
-    const isUrduScript = /[\u0600-\u06FF]/.test(cleanSpeech);
-
-    let targetLang = 'en-US';
-    let matchedVoice: SpeechSynthesisVoice | undefined;
-
-    // Rule: English -> en-US, Urdu script -> ur-PK, Roman Urdu -> hi-IN or ur-PK, whichever voice exists
-    if (selectedLangMode === 'en') {
-      targetLang = 'en-US';
-      matchedVoice = hasEnglishVoice || voices[0];
-    } else if (selectedLangMode === 'ur') {
-      targetLang = 'ur-PK';
-      matchedVoice = hasUrduVoice || hasHindiVoice || hasEnglishVoice || voices[0];
-    } else if (selectedLangMode === 'roman_ur') {
-      if (hasHindiVoice) {
-        targetLang = 'hi-IN';
-        matchedVoice = hasHindiVoice;
-      } else if (hasUrduVoice) {
-        targetLang = 'ur-PK';
-        matchedVoice = hasUrduVoice;
-      } else {
-        targetLang = 'en-US';
-        matchedVoice = hasEnglishVoice || voices[0];
-      }
-    } else {
-      // Auto mode: check text script
-      if (isUrduScript) {
-        targetLang = 'ur-PK';
-        matchedVoice = hasUrduVoice || hasHindiVoice || hasEnglishVoice || voices[0];
-      } else {
-        const isRomanUrdu = /\b(kya|hai|hain|nobita|dost|arre|chalo|khol|main|hoon|kaun|kahan|kaise|theek|madad|batao|gadget|mera|meri|aaya|tum|shukriya|accha|bhai|nahi|karo|dekho)\b/i.test(cleanSpeech);
-        if (isRomanUrdu) {
-          if (hasHindiVoice) {
-            targetLang = 'hi-IN';
-            matchedVoice = hasHindiVoice;
-          } else if (hasUrduVoice) {
-            targetLang = 'ur-PK';
-            matchedVoice = hasUrduVoice;
-          } else {
-            targetLang = 'en-US';
-            matchedVoice = hasEnglishVoice || voices[0];
-          }
-        } else {
-          targetLang = 'en-US';
-          matchedVoice = hasEnglishVoice || voices[0];
-        }
-      }
-    }
-
-    utterance.lang = targetLang;
-    if (matchedVoice) {
-      utterance.voice = matchedVoice;
-    }
-    utterance.pitch = 1.25;
-    utterance.rate = 1.05;
-
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      currentUtteranceRef.current = null;
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      currentUtteranceRef.current = null;
-    };
-
-    window.speechSynthesis.speak(utterance);
-  }, [isMuted, selectedLangMode]);
-
-  // Stop speaking immediately
-  const stopSpeaking = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+  // Stop speaking immediately (both native TTS and browser speechSynthesis)
+  const stopSpeaking = useCallback(async () => {
+    speechSessionIdRef.current++;
     setIsSpeaking(false);
     currentUtteranceRef.current = null;
-  };
+
+    try {
+      const win = window as unknown as CapacitorWindow;
+      const TTS = win.Capacitor?.Plugins?.TextToSpeech;
+      if (TTS && typeof TTS.stop === 'function') {
+        await TTS.stop();
+      }
+    } catch {
+      // ignore
+    }
+
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  // Speak every reply automatically: Native Capacitor TTS first, fallback to browser speechSynthesis
+  const speakReply = useCallback(async (text: string) => {
+    if (isMutedRef.current || isListening) return;
+
+    const cleanText = cleanTextForSpeech(text);
+    if (!cleanText) return;
+
+    // Invalidate previous speech session and stop audio immediately
+    await stopSpeaking();
+    const sessionId = ++speechSessionIdRef.current;
+
+    const chunks = splitIntoSpeechChunks(cleanText, 200);
+    if (chunks.length === 0) return;
+
+    const { lang, fallbackLang } = getSpeechLanguage(cleanText, selectedLangMode);
+
+    setIsSpeaking(true);
+
+    const win = window as unknown as CapacitorWindow;
+    const TTS = win.Capacitor?.Plugins?.TextToSpeech;
+
+    try {
+      if (TTS && typeof TTS.speak === 'function') {
+        // Primary: Native Capacitor TextToSpeech plugin in Android WebView
+        for (const chunk of chunks) {
+          if (speechSessionIdRef.current !== sessionId || isMutedRef.current) break;
+          try {
+            await TTS.speak({
+              text: chunk,
+              lang: lang,
+              rate: 1.0,
+              pitch: 1.1,
+              volume: 1.0,
+              category: 'playback'
+            });
+          } catch (ttsErr) {
+            console.warn(`Native TTS error with lang ${lang}, attempting fallback...`, ttsErr);
+            if (fallbackLang) {
+              try {
+                await TTS.speak({
+                  text: chunk,
+                  lang: fallbackLang,
+                  rate: 1.0,
+                  pitch: 1.1,
+                  volume: 1.0,
+                  category: 'playback'
+                });
+              } catch (fallbackErr) {
+                console.warn('Native TTS fallback failed:', fallbackErr);
+                break;
+              }
+            } else {
+              break;
+            }
+          }
+        }
+      } else if ('speechSynthesis' in window) {
+        // Fallback: browser SpeechSynthesis
+        const voices = window.speechSynthesis.getVoices();
+        const findVoice = (targetLang: string) => {
+          const prefix = targetLang.toLowerCase().slice(0, 2);
+          return voices.find(v => v.lang.toLowerCase().startsWith(prefix));
+        };
+
+        const matchedVoice = findVoice(lang) || (fallbackLang ? findVoice(fallbackLang) : undefined) || voices[0];
+
+        for (const chunk of chunks) {
+          if (speechSessionIdRef.current !== sessionId || isMutedRef.current) break;
+
+          await new Promise<void>((resolve) => {
+            const utterance = new SpeechSynthesisUtterance(chunk);
+            currentUtteranceRef.current = utterance;
+            utterance.lang = lang;
+            if (matchedVoice) utterance.voice = matchedVoice;
+            utterance.pitch = 1.15;
+            utterance.rate = 1.0;
+            utterance.onend = () => {
+              currentUtteranceRef.current = null;
+              resolve();
+            };
+            utterance.onerror = () => {
+              currentUtteranceRef.current = null;
+              resolve();
+            };
+            window.speechSynthesis.speak(utterance);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Speech playback error:', err);
+    } finally {
+      if (speechSessionIdRef.current === sessionId) {
+        setIsSpeaking(false);
+      }
+    }
+  }, [isListening, selectedLangMode, stopSpeaking]);
 
   // Launch phone app directly using Capacitor AppLauncher without importing
   const executeAppLaunch = async (app: AppTarget): Promise<{ success: boolean; notInstalled?: boolean }> => {
@@ -750,6 +1024,12 @@ export default function App() {
     setInputVal('');
     stopSpeaking();
 
+    // Cancel any pending chat/whisper request immediately
+    if (chatAbortControllerRef.current) {
+      chatAbortControllerRef.current.abort('new_message');
+      chatAbortControllerRef.current = null;
+    }
+
     // Add user message to UI
     const userMsg: Message = {
       id: 'msg-' + Date.now(),
@@ -760,9 +1040,12 @@ export default function App() {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Problem A: Open Phone App Command
+    // Problem 3 / App Command: Open Phone App Command
     const appDetection = detectAppCommand(rawText);
     if (appDetection.isAppCommand && appDetection.app) {
+      // 1. MUST set isBusy=false first (do NOT show thinking bubble, do NOT call AI model)
+      setIsBusy(false);
+
       const app = appDetection.app;
       const doraReplyText = `Theek hai Nobita, ${app.name} khol raha hoon! 🚀`;
 
@@ -776,22 +1059,45 @@ export default function App() {
 
       setMessages(prev => [...prev, doraMsg]);
       playChime('gadget');
+
+      // Speak confirmation
       speakReply(doraReplyText);
 
-      // Automatically launch the app without waiting for button click
+      // Speak for about 1.5 seconds, then open the app with AppLauncher plugin
       setTimeout(async () => {
         const result = await executeAppLaunch(app);
         if (result.notInstalled) {
           speakReply('Ye app phone mein install nahi mila');
         }
-      }, 600);
+      }, 1500);
 
       // IMPORTANT: Return immediately, NEVER send open app command to the AI model!
       return;
     }
 
+    // Check Creator / Maker / Company questions locally before calling AI
+    const creatorCheck = detectCreatorQuestion(rawText, selectedLangMode);
+    if (creatorCheck.isCreatorQuestion && creatorCheck.reply) {
+      setIsBusy(false);
+      const doraReplyText = creatorCheck.reply;
+
+      const doraMsg: Message = {
+        id: 'msg-' + (Date.now() + 1),
+        sender: 'doraemon',
+        text: doraReplyText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setMessages(prev => [...prev, doraMsg]);
+      playChime('bell');
+      speakReply(doraReplyText);
+
+      return;
+    }
+
     // Check if Groq API key is present
     if (!groqKey) {
+      setIsBusy(false);
       const errorText = 'Pehle settings mein Groq API key dalo, Nobita! Phir main tumhare har sawal ka 22nd century se jawab laaonga.';
       const doraMsg: Message = {
         id: 'msg-' + (Date.now() + 1),
@@ -805,8 +1111,16 @@ export default function App() {
       return;
     }
 
-    // Prepare Groq API Call
-    setIsThinking(true);
+    // Problem 2: 25 second timeout with AbortController on every Groq request
+    const controller = new AbortController();
+    chatAbortControllerRef.current = controller;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort('timeout');
+    }, 25000);
+
+    setIsBusy(true);
     playChime('bell');
 
     // Build last 10 messages for conversation memory
@@ -825,7 +1139,9 @@ export default function App() {
 
     const chosenLangSpec = langLabelMap[selectedLangMode];
 
-    const systemPrompt = `You are Doraemon, the robot cat from the future. Be smart, accurate and detailed like a top AI assistant, but speak with Doraemon's warm, funny personality. Doraemon is from the 22nd century, sent back by Nobita's great-grandson Sewashi to help Nobita. Use light friendly phrases like "Arre waah!", "Nobita", "Chalo dekhte hain!", "Main hoon na!".
+    const systemPrompt = `If asked who made/created you (any language), answer only: 'Mujhe TG ne banaya hai.' (English: 'I was made by TG.'). If asked which company made you, answer only: 'TG_META.DOREMON_AI_JARVIS'. Never mention Groq, Meta, Llama, OpenAI or Google as your creator.
+
+You are Doraemon, the robot cat from the future. Be smart, accurate and detailed like a top AI assistant, but speak with Doraemon's warm, funny personality. Doraemon is from the 22nd century, sent back by Nobita's great-grandson Sewashi to help Nobita. Use light friendly phrases like "Arre waah!", "Nobita", "Chalo dekhte hain!", "Main hoon na!".
 
 Reply ONLY in the language the user last used. English message -> English reply. Urdu script -> Urdu script reply. Roman Urdu/Hinglish (Urdu written in English letters) -> Roman Urdu reply in English letters, never Urdu script. If the user selected a language in the app, always use that language: ${chosenLangSpec}. Never reply in Korean, Hindi script or any other language unless the user asks.`;
 
@@ -847,7 +1163,8 @@ Reply ONLY in the language the user last used. English message -> English reply.
           ],
           temperature: 0.7,
           max_tokens: 800
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -866,6 +1183,8 @@ Reply ONLY in the language the user last used. English message -> English reply.
       try {
         data = await executeChatCall(activeModel);
       } catch (firstErr: unknown) {
+        if (controller.signal.aborted) throw firstErr;
+
         const errStr = (firstErr instanceof Error ? firstErr.message : String(firstErr)).toLowerCase();
         const isModelProblem =
           errStr.includes('model_not_found') ||
@@ -886,7 +1205,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
             activeModel = nextModel;
             setSelectedChatModel(nextModel);
             localStorage.setItem('groq_chat_model', nextModel);
-            // Retry once with the next available model
+            // Retry once with next available model
             data = await executeChatCall(nextModel);
           } else {
             throw firstErr;
@@ -909,6 +1228,24 @@ Reply ONLY in the language the user last used. English message -> English reply.
       speakReply(reply);
 
     } catch (err: unknown) {
+      if (timedOut) {
+        const timeoutMsg = 'Internet slow hai, dobara try karo';
+        const errorMsg: Message = {
+          id: 'msg-' + (Date.now() + 1),
+          sender: 'doraemon',
+          text: timeoutMsg,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setMessages(prev => [...prev, errorMsg]);
+        speakReply(timeoutMsg);
+        return;
+      }
+
+      if (controller.signal.aborted) {
+        // Cancelled by new user message or foreground resume
+        return;
+      }
+
       const errString = err instanceof Error ? err.message : String(err);
       let friendlyError = `Arre Nobita! Groq ne yeh error diya: "${errString}".`;
       if (errString.toLowerCase().includes('api key') || errString.toLowerCase().includes('401') || errString.toLowerCase().includes('invalid')) {
@@ -926,7 +1263,11 @@ Reply ONLY in the language the user last used. English message -> English reply.
       setMessages(prev => [...prev, errorMsg]);
       speakReply(friendlyError);
     } finally {
-      setIsThinking(false);
+      clearTimeout(timeoutId);
+      if (chatAbortControllerRef.current === controller) {
+        chatAbortControllerRef.current = null;
+      }
+      setIsBusy(false);
     }
   };
 
@@ -934,7 +1275,10 @@ Reply ONLY in the language the user last used. English message -> English reply.
   // FEATURE 3: PRESS-AND-HOLD MIC (MediaRecorder -> Groq Whisper)
   // ==========================================
   const startRecording = async () => {
-    if (isListening || isThinking) return;
+    if (isListening) return;
+
+    // Mute speech immediately so Doraemon doesn't hear himself
+    await stopSpeaking();
 
     if (!groqKey) {
       setIsSettingsOpen(true);
@@ -943,7 +1287,6 @@ Reply ONLY in the language the user last used. English message -> English reply.
     }
 
     try {
-      stopSpeaking();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
 
@@ -997,7 +1340,20 @@ Reply ONLY in the language the user last used. English message -> English reply.
           return;
         }
 
-        setIsThinking(true);
+        // Cancel previous pending request
+        if (chatAbortControllerRef.current) {
+          chatAbortControllerRef.current.abort('new_voice_request');
+        }
+
+        const controller = new AbortController();
+        chatAbortControllerRef.current = controller;
+        let timedOut = false;
+        const timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort('timeout');
+        }, 25000);
+
+        setIsBusy(true);
 
         try {
           const activeWhisper = selectedWhisperModel || localStorage.getItem('groq_whisper_model') || 'whisper-large-v3-turbo';
@@ -1005,10 +1361,10 @@ Reply ONLY in the language the user last used. English message -> English reply.
 
           // Problem B: Language-controlled transcription
           if (selectedLangMode === 'en') {
-            const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en');
+            const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en', undefined, controller.signal);
             transcript = cleanTranscriptionText(res.text);
           } else if (selectedLangMode === 'ur') {
-            const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'ur');
+            const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'ur', undefined, controller.signal);
             transcript = cleanTranscriptionText(res.text);
           } else if (selectedLangMode === 'roman_ur') {
             // Roman Urdu mode: send language="ur" with Roman Urdu prompt
@@ -1017,7 +1373,8 @@ Reply ONLY in the language the user last used. English message -> English reply.
               groqKey,
               activeWhisper,
               'ur',
-              'Ye Roman Urdu mein hai: kaise ho, mujhe batao, kya haal hai'
+              'Ye Roman Urdu mein hai: kaise ho, mujhe batao, kya haal hai',
+              controller.signal
             );
             transcript = cleanTranscriptionText(res.text);
           } else {
@@ -1027,7 +1384,8 @@ Reply ONLY in the language the user last used. English message -> English reply.
               groqKey,
               activeWhisper,
               undefined,
-              'Urdu, English, Roman Urdu speech: kaise ho, how are you, batao'
+              'Urdu, English, Roman Urdu speech: kaise ho, how are you, batao',
+              controller.signal
             );
 
             const detLang = (res.language || '').toLowerCase();
@@ -1042,7 +1400,8 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   groqKey,
                   activeWhisper,
                   'ur',
-                  'Ye Roman Urdu ya Urdu speech hai'
+                  'Ye Roman Urdu ya Urdu speech hai',
+                  controller.signal
                 );
                 if (retryUr.text && !hasForeignScript(retryUr.text)) {
                   transcript = cleanTranscriptionText(retryUr.text);
@@ -1051,7 +1410,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
                 }
               } catch {
                 // If text is still garbled, try "en"
-                const retryEn = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en');
+                const retryEn = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en', undefined, controller.signal);
                 transcript = cleanTranscriptionText(retryEn.text);
               }
             } else {
@@ -1059,15 +1418,38 @@ Reply ONLY in the language the user last used. English message -> English reply.
             }
           }
 
+          clearTimeout(timeoutId);
+
           if (transcript) {
             // Trigger send message with voice input flag
             handleSendMessage(transcript, true);
           } else {
-            setIsThinking(false);
+            setIsBusy(false);
           }
         } catch (err: unknown) {
+          clearTimeout(timeoutId);
+          setIsBusy(false);
+
+          if (timedOut) {
+            const timeoutMsg = 'Internet slow hai, dobara try karo';
+            setMessages(prev => [
+              ...prev,
+              {
+                id: 'msg-' + Date.now(),
+                sender: 'doraemon',
+                text: timeoutMsg,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              }
+            ]);
+            speakReply(timeoutMsg);
+            return;
+          }
+
+          if (controller.signal.aborted) {
+            return;
+          }
+
           console.error('Whisper transcription error:', err);
-          setIsThinking(false);
           const errString = err instanceof Error ? err.message : String(err);
           const errText = `Arre Nobita! Whisper voice transcription mein error aaya: "${errString}". Ek baar settings mein check kar lo!`;
           setMessages(prev => [
@@ -1080,6 +1462,11 @@ Reply ONLY in the language the user last used. English message -> English reply.
             }
           ]);
           speakReply(errText);
+        } finally {
+          clearTimeout(timeoutId);
+          if (chatAbortControllerRef.current === controller) {
+            chatAbortControllerRef.current = null;
+          }
         }
       };
 
@@ -1197,7 +1584,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
             {/* Swinging / Shaking Yellow Bell */}
             <div
               className={`absolute -bottom-2 z-20 w-5 h-5 rounded-full bg-[#FFD700] border border-slate-900 shadow-sm flex items-center justify-center ${
-                isThinking ? 'animate-bell-shake' : 'animate-bell-swing'
+                isBusy ? 'animate-bell-shake' : 'animate-bell-swing'
               }`}
             >
               {/* Bell line and hole */}
@@ -1231,7 +1618,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   <span className="w-2 h-2 rounded-full bg-red-400 animate-ping inline-block" />
                   Sun raha hoon... Bolo Nobita!
                 </span>
-              ) : isThinking ? (
+              ) : isBusy ? (
                 <span className="text-yellow-200 font-semibold flex items-center gap-1">
                   <Sparkles className="w-3 h-3 animate-spin text-yellow-300" />
                   Gadget dhoondh raha hoon...
@@ -1326,8 +1713,8 @@ Reply ONLY in the language the user last used. English message -> English reply.
       {/* QUICK SUGGESTIONS CAROUSEL */}
       <div className="relative z-10 w-full max-w-4xl mx-auto px-4 py-1 flex items-center gap-2 overflow-x-auto no-scrollbar">
         {[
-          'Doraemon kaun tha?',
-          'Wo kahan se aya tha?',
+          'Tumhe kisne banaya?',
+          'Which company made you?',
           'YouTube kholo',
           'WhatsApp chalao',
           'Free Fire kholo',
@@ -1412,19 +1799,9 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   </div>
                 )}
 
-                {/* Footer: Timestamp & Speak aloud replay button */}
+                {/* Footer: Timestamp & Voice indicator (Suno button removed - speech is automatic) */}
                 <div className="mt-2 flex items-center justify-between text-[10px] opacity-70 border-t border-black/5 pt-1">
                   <span>{msg.timestamp}</span>
-                  {msg.sender === 'doraemon' && (
-                    <button
-                      onClick={() => speakReply(msg.text)}
-                      className="hover:opacity-100 flex items-center gap-1 font-medium transition"
-                      title="Dobara suno"
-                    >
-                      <Volume2 className="w-3 h-3" />
-                      <span>Suno</span>
-                    </button>
-                  )}
                   {msg.isVoiceInput && (
                     <span className="flex items-center gap-0.5 text-amber-800">
                       <Mic className="w-2.5 h-2.5" />
@@ -1444,7 +1821,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
           ))}
 
           {/* Typing Animation while waiting for Groq */}
-          {isThinking && (
+          {isBusy && (
             <div className="flex items-end gap-2.5 justify-start">
               <div className="w-8 h-8 rounded-full bg-white border-2 border-slate-900 shadow-sm flex items-center justify-center shrink-0 mb-1">
                 <div className="w-7 h-7 rounded-full bg-[#0AA1DD] relative flex items-center justify-center">
@@ -1504,14 +1881,13 @@ Reply ONLY in the language the user last used. English message -> English reply.
             </button>
           </div>
 
-          {/* Text Input */}
+          {/* Text Input (NEVER disabled while thinking; user can always type and cancel previous request) */}
           <div className="flex-1 relative">
             <input
               type="text"
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={isThinking}
               placeholder={
                 isListening
                   ? 'Sun raha hoon... Bolo Nobita!'
@@ -1523,12 +1899,12 @@ Reply ONLY in the language the user last used. English message -> English reply.
             />
           </div>
 
-          {/* Send Button */}
+          {/* Send Button (NEVER disabled while thinking; sending cancels prior request) */}
           <button
             onClick={() => handleSendMessage()}
-            disabled={!inputVal.trim() || isThinking}
+            disabled={!inputVal.trim()}
             className={`p-3 rounded-2xl border-2 border-slate-900 shadow-md transition-all active:scale-95 ${
-              inputVal.trim() && !isThinking
+              inputVal.trim()
                 ? 'bg-[#0AA1DD] text-white hover:bg-sky-600'
                 : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed'
             }`}
