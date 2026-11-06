@@ -19,9 +19,11 @@ jobs:
       - run: npm install @capacitor/core@7 @capacitor/android@7 @capacitor/cli@7 @capacitor/app-launcher@7 @capacitor-community/text-to-speech --legacy-peer-deps
       - run: npx vite build
       - run: npx cap add android
-      - name: Add permissions
+      - name: Native overlay files and permissions
         run: |
-          sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n    <application#' android/app/src/main/AndroidManifest.xml
+          cp MainActivity.java JarvisBridge.java OverlayService.java android/app/src/main/java/com/tgmeta/doremonjarvis/
+          sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</application>#<service android:name=".OverlayService" android:exported="false" android:foregroundServiceType="microphone" />\n    </application>#' android/app/src/main/AndroidManifest.xml
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
