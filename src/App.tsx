@@ -22,196 +22,169 @@ import {
   Smartphone,
   Check,
   RotateCcw,
-  RefreshCw
+  RefreshCw,
+  Globe
 } from 'lucide-react';
 
 // ==========================================
+// ==========================================
 // FEATURE 5: APP_MAP & NATIVE LAUNCHER
 // ==========================================
+export type LanguageMode = 'auto' | 'en' | 'ur' | 'roman_ur';
+
 interface AppTarget {
   name: string;
-  scheme: string; // Custom URI scheme or Intent URI
   packageName: string;
+  fallbackPackage?: string;
   webFallback: string;
   keywords: string[];
 }
 
 /**
- * Android Intent & URI Scheme Map for Popular Phone Apps
- * 
- * NATIVE ANDROID WRAPPER NOTE:
- * When packing this applet into a native Android APK using WebView or Capacitor,
- * you can hook this directly into the native Android PackageManager:
- * 
- * Example Capacitor / WebView bridge:
- * ```ts
- * if (window.AndroidBridge && window.AndroidBridge.launchApp) {
- *    window.AndroidBridge.launchApp(app.packageName);
- * } else if (window.Capacitor) {
- *    import('@capacitor/app-launcher').then(({ AppLauncher }) => {
- *       AppLauncher.openUrl({ url: app.scheme });
- *    });
- * } else {
- *    window.location.href = app.scheme;
- * }
- * ```
+ * PACKAGE Map for Popular Phone Apps (Capacitor AppLauncher)
+ * Uses package names directly for AL.canOpenUrl and AL.openUrl
  */
 const APP_MAP: Record<string, AppTarget> = {
   youtube: {
     name: 'YouTube',
-    scheme: 'intent://www.youtube.com/#Intent;package=com.google.android.youtube;scheme=https;end',
     packageName: 'com.google.android.youtube',
     webFallback: 'https://www.youtube.com',
-    keywords: ['youtube', 'yutube', 'yt', 'you tube', 'yotube', 'video']
+    keywords: ['youtube', 'yutube', 'yt', 'you tube', 'yotube', 'video', 'یوٹیوب']
   },
   whatsapp: {
     name: 'WhatsApp',
-    scheme: 'whatsapp://',
     packageName: 'com.whatsapp',
     webFallback: 'https://web.whatsapp.com',
-    keywords: ['whatsapp', 'whatsap', 'watsapp', 'watsap', 'wa']
-  },
-  instagram: {
-    name: 'Instagram',
-    scheme: 'instagram://',
-    packageName: 'com.instagram.android',
-    webFallback: 'https://www.instagram.com',
-    keywords: ['instagram', 'insta', 'ig', 'instagrem']
-  },
-  telegram: {
-    name: 'Telegram',
-    scheme: 'tg://',
-    packageName: 'org.telegram.messenger',
-    webFallback: 'https://web.telegram.org',
-    keywords: ['telegram', 'tele', 'tg']
+    keywords: ['whatsapp', 'whatsap', 'watsapp', 'watsap', 'wa', 'wtsp', 'واٹس ایپ', 'واٹسایپ']
   },
   tiktok: {
     name: 'TikTok',
-    scheme: 'snssdk1128://',
     packageName: 'com.zhiliaoapp.musically',
+    fallbackPackage: 'com.ss.android.ugc.trill',
     webFallback: 'https://www.tiktok.com',
-    keywords: ['tiktok', 'tik tok', 'toktok']
+    keywords: ['tiktok', 'tik tok', 'toktok', 'ٹک ٹاک', 'ٹک ٹوک']
+  },
+  telegram: {
+    name: 'Telegram',
+    packageName: 'org.telegram.messenger',
+    webFallback: 'https://web.telegram.org',
+    keywords: ['telegram', 'tele', 'tg', 'ٹیلیگرام']
+  },
+  instagram: {
+    name: 'Instagram',
+    packageName: 'com.instagram.android',
+    webFallback: 'https://www.instagram.com',
+    keywords: ['instagram', 'insta', 'ig', 'instagrem', 'انسٹاگرام', 'انسٹا']
   },
   chrome: {
-    name: 'Google Chrome',
-    scheme: 'googlechrome://',
+    name: 'Chrome',
     packageName: 'com.android.chrome',
     webFallback: 'https://www.google.com',
-    keywords: ['chrome', 'browser', 'google chrome', 'chrom']
+    keywords: ['chrome', 'browser', 'google chrome', 'chrom', 'کروم']
   },
-  playstore: {
-    name: 'Google Play Store',
-    scheme: 'market://',
-    packageName: 'com.android.vending',
-    webFallback: 'https://play.google.com/store',
-    keywords: ['play store', 'playstore', 'store', 'market', 'google play']
+  gemini: {
+    name: 'Gemini',
+    packageName: 'com.google.android.apps.bard',
+    webFallback: 'https://gemini.google.com',
+    keywords: ['gemini', 'bard', 'google gemini', 'جیمنی']
   },
-  discord: {
-    name: 'Discord',
-    scheme: 'intent://#Intent;package=com.discord;scheme=https;end',
-    packageName: 'com.discord',
-    webFallback: 'https://discord.com',
-    keywords: ['discord', 'dc', 'diskord']
+  claude: {
+    name: 'Claude',
+    packageName: 'com.anthropic.claude',
+    webFallback: 'https://claude.ai',
+    keywords: ['claude', 'anthropic', 'کلاڈ']
+  },
+  google: {
+    name: 'Google',
+    packageName: 'com.google.android.googlequicksearchbox',
+    webFallback: 'https://www.google.com',
+    keywords: ['google', 'google app', 'search', 'گوگل']
   },
   freefire: {
     name: 'Free Fire',
-    scheme: 'intent:#Intent;package=com.dts.freefireth;end',
     packageName: 'com.dts.freefireth',
+    fallbackPackage: 'com.dts.freefiremax',
     webFallback: 'https://play.google.com/store/apps/details?id=com.dts.freefireth',
-    keywords: ['free fire', 'freefire', 'ff', 'garena free fire']
+    keywords: ['free fire', 'freefire', 'ff', 'garena free fire', 'فری فائر']
+  },
+  discord: {
+    name: 'Discord',
+    packageName: 'com.discord',
+    webFallback: 'https://discord.com',
+    keywords: ['discord', 'dc', 'diskord', 'ڈسکارڈ']
+  },
+  playstore: {
+    name: 'Play Store',
+    packageName: 'com.android.vending',
+    webFallback: 'https://play.google.com/store',
+    keywords: ['play store', 'playstore', 'store', 'market', 'google play', 'پلے اسٹور', 'پلے سٹور']
   },
   facebook: {
     name: 'Facebook',
-    scheme: 'fb://',
     packageName: 'com.facebook.katana',
     webFallback: 'https://www.facebook.com',
-    keywords: ['facebook', 'fb', 'facebok']
+    keywords: ['facebook', 'fb', 'facebok', 'فیس بک']
   },
   snapchat: {
     name: 'Snapchat',
-    scheme: 'snapchat://',
     packageName: 'com.snapchat.android',
     webFallback: 'https://www.snapchat.com',
-    keywords: ['snapchat', 'snap', 'sc', 'snap chat']
+    keywords: ['snapchat', 'snap', 'sc', 'snap chat', 'سنیپ چیٹ']
   },
   spotify: {
     name: 'Spotify',
-    scheme: 'spotify://',
     packageName: 'com.spotify.music',
     webFallback: 'https://open.spotify.com',
-    keywords: ['spotify', 'music', 'songs', 'gaane', 'spoti']
-  },
-  camera: {
-    name: 'Camera',
-    scheme: 'intent:#Intent;action=android.media.action.IMAGE_CAPTURE;category=android.intent.category.DEFAULT;end',
-    packageName: 'com.android.camera',
-    webFallback: '',
-    keywords: ['camera', 'cam', 'tasveer', 'photo', 'capture']
-  },
-  settings: {
-    name: 'Phone Settings',
-    scheme: 'intent:#Intent;action=android.settings.SETTINGS;category=android.intent.category.DEFAULT;end',
-    packageName: 'com.android.settings',
-    webFallback: '',
-    keywords: ['settings', 'setting', 'phone settings', 'system settings']
+    keywords: ['spotify', 'music', 'songs', 'gaane', 'spoti', 'اسپاٹائفائی']
   },
   gmail: {
     name: 'Gmail',
-    scheme: 'googlegmail://',
     packageName: 'com.google.android.gm',
     webFallback: 'https://mail.google.com',
-    keywords: ['gmail', 'mail', 'email', 'g mail']
+    keywords: ['gmail', 'mail', 'email', 'g mail', 'جی میل']
   },
   maps: {
-    name: 'Google Maps',
-    scheme: 'geo:0,0?q=',
+    name: 'Maps',
     packageName: 'com.google.android.apps.maps',
     webFallback: 'https://maps.google.com',
-    keywords: ['maps', 'google maps', 'map', 'rasta', 'location']
+    keywords: ['maps', 'google maps', 'map', 'rasta', 'location', 'گوگل میپس', 'میپس']
+  },
+  camera: {
+    name: 'Camera',
+    packageName: 'com.android.camera',
+    webFallback: '',
+    keywords: ['camera', 'cam', 'tasveer', 'photo', 'capture', 'کیمرہ']
+  },
+  settings: {
+    name: 'Settings',
+    packageName: 'com.android.settings',
+    webFallback: '',
+    keywords: ['settings', 'setting', 'phone settings', 'system settings', 'سیٹنگز', 'سیٹنگ']
   },
   calculator: {
     name: 'Calculator',
-    scheme: 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR;end',
     packageName: 'com.google.android.calculator',
     webFallback: 'https://www.google.com/search?q=calculator',
-    keywords: ['calculator', 'calc', 'hisaab', 'calcy']
-  },
-  gemini: {
-    name: 'Google Gemini',
-    scheme: 'intent://#Intent;package=com.google.android.apps.bard;scheme=https;end',
-    packageName: 'com.google.android.apps.bard',
-    webFallback: 'https://gemini.google.com',
-    keywords: ['gemini', 'bard', 'google gemini', 'ai']
-  },
-  claude: {
-    name: 'Claude AI',
-    scheme: 'intent://#Intent;package=com.anthropic.claude;scheme=https;end',
-    packageName: 'com.anthropic.claude',
-    webFallback: 'https://claude.ai',
-    keywords: ['claude', 'anthropic']
-  },
-  google: {
-    name: 'Google App',
-    scheme: 'googleapp://',
-    packageName: 'com.google.android.googlequicksearchbox',
-    webFallback: 'https://www.google.com',
-    keywords: ['google', 'google app', 'search']
+    keywords: ['calculator', 'calc', 'hisaab', 'calcy', 'کیلکولیٹر']
   }
 };
 
 // Fuzzy match app name helper
 function detectAppCommand(text: string): { isAppCommand: boolean; app?: AppTarget; rawTargetName?: string } {
   const clean = text.toLowerCase().trim();
-  
+  if (!clean) return { isAppCommand: false };
+
   // Triggers in English, Urdu, Hindi, Roman Urdu
   const openTriggers = [
-    'open', 'kholo', 'khol do', 'chalao', 'chala do', 'run', 'launch',
-    'start', 'kholiye', 'chalu karo', 'kholna'
+    'open', 'kholo', 'khol do', 'khol de', 'chalao', 'chala do', 'run', 'launch',
+    'start', 'kholiye', 'chalu karo', 'kholna', 'shuru karo',
+    'کھولو', 'کولو', 'کھول دو', 'کھولیں', 'چلاؤ', 'چلاو', 'اوپن', 'شروع کرو'
   ];
-  
-  // Check if text starts with trigger or ends with trigger
+
   let target = '';
+
   for (const trigger of openTriggers) {
+    // Starts with trigger: "open youtube", "kholo whatsapp"
     const startPattern = new RegExp(`^${trigger}\\s+(.+)`, 'i');
     const matchStart = clean.match(startPattern);
     if (matchStart) {
@@ -219,7 +192,8 @@ function detectAppCommand(text: string): { isAppCommand: boolean; app?: AppTarge
       break;
     }
 
-    const endPattern = new RegExp(`(.+?)\\s+(${trigger})(?:\\s+karo)?$`, 'i');
+    // Ends with trigger: "youtube kholo", "whatsapp chalao"
+    const endPattern = new RegExp(`(.+?)\\s+(${trigger})(?:\\s+karo|\\s+do)?$`, 'i');
     const matchEnd = clean.match(endPattern);
     if (matchEnd) {
       target = matchEnd[1].trim();
@@ -227,11 +201,11 @@ function detectAppCommand(text: string): { isAppCommand: boolean; app?: AppTarge
     }
   }
 
-  // Also support direct app mentions like "open youtube", "youtube kholo"
+  // Also support direct app mentions
   if (!target) {
-    for (const [key, app] of Object.entries(APP_MAP)) {
+    for (const [_, app] of Object.entries(APP_MAP)) {
       for (const kw of app.keywords) {
-        if (clean === kw || clean === `open ${kw}` || clean === `${kw} kholo` || clean === `${kw} open`) {
+        if (clean === kw || clean === `open ${kw}` || clean === `${kw} kholo` || clean === `${kw} open` || clean === `${kw} chalao`) {
           return { isAppCommand: true, app };
         }
       }
@@ -239,29 +213,87 @@ function detectAppCommand(text: string): { isAppCommand: boolean; app?: AppTarge
     return { isAppCommand: false };
   }
 
-  // Remove common punctuation and words like "app", "the", "mera", "please"
-  target = target.replace(/^(the|app|please|mera|meri|apna)\s+/i, '').replace(/\s+(app|application)$/i, '').trim();
+  // Remove common punctuation and filler words
+  target = target
+    .replace(/^(the|app|application|please|mera|meri|apna|apni|yeh|ye|woh|wo)\s+/i, '')
+    .replace(/\s+(the|app|application|please|karo|do)$/i, '')
+    .trim();
 
   // Try matching against APP_MAP keywords
   for (const [_, app] of Object.entries(APP_MAP)) {
     for (const kw of app.keywords) {
-      if (target === kw || target.includes(kw) || kw.includes(target)) {
+      const cleanTarget = target.replace(/\s+/g, '');
+      const cleanKw = kw.replace(/\s+/g, '');
+      if (target === kw || cleanTarget === cleanKw || target.includes(kw) || kw.includes(target)) {
         return { isAppCommand: true, app };
       }
     }
   }
 
   // Fallback for apps not explicitly in APP_MAP: search in Google Play Store
+  const displayName = target.charAt(0).toUpperCase() + target.slice(1);
   return {
     isAppCommand: true,
     rawTargetName: target,
     app: {
-      name: target.charAt(0).toUpperCase() + target.slice(1),
-      scheme: `market://search?q=${encodeURIComponent(target)}`,
+      name: displayName,
       packageName: `search:${target}`,
       webFallback: `https://play.google.com/store/search?q=${encodeURIComponent(target)}&c=apps`,
       keywords: [target]
     }
+  };
+}
+
+// Helpers for speech cleaning and foreign script detection
+function hasForeignScript(text: string): boolean {
+  // Matches Korean, Chinese, Japanese, Cyrillic, Thai
+  return /[\uAC00-\uD7AF\u1100-\u11FF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\u0400-\u04FF\u0E00-\u0E7F]/.test(text);
+}
+
+function cleanTranscriptionText(text: string): string {
+  return text
+    .replace(/[\uAC00-\uD7AF\u1100-\u11FF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\u0400-\u04FF\u0E00-\u0E7F]/g, '')
+    .trim();
+}
+
+// Whisper audio request helper
+async function requestGroqWhisper(
+  audioBlob: Blob,
+  key: string,
+  model: string,
+  lang?: string,
+  prompt?: string
+): Promise<{ text: string; language?: string }> {
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'audio.webm');
+  formData.append('model', model);
+  formData.append('response_format', 'verbose_json');
+
+  if (lang) {
+    formData.append('language', lang);
+  }
+  if (prompt) {
+    formData.append('prompt', prompt);
+  }
+
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key.trim()}`
+    },
+    body: formData
+  });
+
+  if (!res.ok) {
+    const errJson = await res.json().catch(() => ({}));
+    const msg = errJson?.error?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  const json = await res.json();
+  return {
+    text: (json.text || '').trim(),
+    language: (json.language || '').toLowerCase()
   };
 }
 
@@ -400,6 +432,17 @@ export default function App() {
     return localStorage.getItem('groq_whisper_model') || 'whisper-large-v3-turbo';
   });
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
+
+  // Problem B: Language Control (auto | en | ur | roman_ur)
+  const [selectedLangMode, setSelectedLangMode] = useState<LanguageMode>(() => {
+    return (localStorage.getItem('doraemon_lang_mode') as LanguageMode) || 'auto';
+  });
+
+  const handleLangModeChange = (mode: LanguageMode) => {
+    setSelectedLangMode(mode);
+    localStorage.setItem('doraemon_lang_mode', mode);
+    playChime('pop');
+  };
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -556,47 +599,78 @@ export default function App() {
     const utterance = new SpeechSynthesisUtterance(cleanSpeech);
     currentUtteranceRef.current = utterance;
 
-    // Detect language
-    const isUrdu = /[\u0600-\u06FF]/.test(cleanSpeech);
-    const isHindiDevanagari = /[\u0900-\u097F]/.test(cleanSpeech);
-    const isRomanUrduHindi = /\b(kya|hai|hain|nobita|dost|arre|chalo|khol|main|hoon|kaun|kahan|kaise|theek|madad|batao|gadget|mera|meri|aaya|tum|shukriya|accha|bhai)\b/i.test(cleanSpeech);
+    const voices = window.speechSynthesis.getVoices();
+    const hasUrduVoice = voices.find(v => v.lang.toLowerCase().startsWith('ur'));
+    const hasHindiVoice = voices.find(v => v.lang.toLowerCase().startsWith('hi'));
+    const hasEnglishVoice = voices.find(v => v.lang.toLowerCase().startsWith('en'));
+
+    const isUrduScript = /[\u0600-\u06FF]/.test(cleanSpeech);
 
     let targetLang = 'en-US';
-    if (isUrdu) {
+    let matchedVoice: SpeechSynthesisVoice | undefined;
+
+    // Rule: English -> en-US, Urdu script -> ur-PK, Roman Urdu -> hi-IN or ur-PK, whichever voice exists
+    if (selectedLangMode === 'en') {
+      targetLang = 'en-US';
+      matchedVoice = hasEnglishVoice || voices[0];
+    } else if (selectedLangMode === 'ur') {
       targetLang = 'ur-PK';
-    } else if (isHindiDevanagari || isRomanUrduHindi) {
-      targetLang = 'hi-IN';
+      matchedVoice = hasUrduVoice || hasHindiVoice || hasEnglishVoice || voices[0];
+    } else if (selectedLangMode === 'roman_ur') {
+      if (hasHindiVoice) {
+        targetLang = 'hi-IN';
+        matchedVoice = hasHindiVoice;
+      } else if (hasUrduVoice) {
+        targetLang = 'ur-PK';
+        matchedVoice = hasUrduVoice;
+      } else {
+        targetLang = 'en-US';
+        matchedVoice = hasEnglishVoice || voices[0];
+      }
+    } else {
+      // Auto mode: check text script
+      if (isUrduScript) {
+        targetLang = 'ur-PK';
+        matchedVoice = hasUrduVoice || hasHindiVoice || hasEnglishVoice || voices[0];
+      } else {
+        const isRomanUrdu = /\b(kya|hai|hain|nobita|dost|arre|chalo|khol|main|hoon|kaun|kahan|kaise|theek|madad|batao|gadget|mera|meri|aaya|tum|shukriya|accha|bhai|nahi|karo|dekho)\b/i.test(cleanSpeech);
+        if (isRomanUrdu) {
+          if (hasHindiVoice) {
+            targetLang = 'hi-IN';
+            matchedVoice = hasHindiVoice;
+          } else if (hasUrduVoice) {
+            targetLang = 'ur-PK';
+            matchedVoice = hasUrduVoice;
+          } else {
+            targetLang = 'en-US';
+            matchedVoice = hasEnglishVoice || voices[0];
+          }
+        } else {
+          targetLang = 'en-US';
+          matchedVoice = hasEnglishVoice || voices[0];
+        }
+      }
     }
 
     utterance.lang = targetLang;
-    utterance.pitch = 1.25; // Slightly cute, cartoonish pitch for Doraemon
-    utterance.rate = 1.05;
-
-    // Pick best available matching voice
-    const voices = window.speechSynthesis.getVoices();
-    const matchedVoice = voices.find(v => v.lang.startsWith(targetLang.slice(0, 2))) ||
-                         voices.find(v => v.lang.includes('hi') || v.lang.includes('ur')) ||
-                         voices.find(v => v.lang.startsWith('en'));
     if (matchedVoice) {
       utterance.voice = matchedVoice;
     }
+    utterance.pitch = 1.25;
+    utterance.rate = 1.05;
 
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-    };
-
+    utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => {
       setIsSpeaking(false);
       currentUtteranceRef.current = null;
     };
-
     utterance.onerror = () => {
       setIsSpeaking(false);
       currentUtteranceRef.current = null;
     };
 
     window.speechSynthesis.speak(utterance);
-  }, [isMuted]);
+  }, [isMuted, selectedLangMode]);
 
   // Stop speaking immediately
   const stopSpeaking = () => {
@@ -607,17 +681,62 @@ export default function App() {
     currentUtteranceRef.current = null;
   };
 
-  // Launch phone app directly
-  const executeAppLaunch = (app: AppTarget) => {
+  // Launch phone app directly using Capacitor AppLauncher without importing
+  const executeAppLaunch = async (app: AppTarget): Promise<{ success: boolean; notInstalled?: boolean }> => {
     playChime('gadget');
-    try {
-      // Trigger intent or scheme
-      window.location.href = app.scheme;
-    } catch {
-      // Fallback to web link if blocked
-      if (app.webFallback) {
-        window.open(app.webFallback, '_blank');
+
+    const win = window as unknown as {
+      Capacitor?: {
+        Plugins?: {
+          AppLauncher?: {
+            canOpenUrl: (opts: { url: string }) => Promise<{ value: boolean }>;
+            openUrl: (opts: { url: string }) => Promise<{ completed: boolean }>;
+          };
+        };
+      };
+    };
+
+    const AL = win.Capacitor?.Plugins?.AppLauncher;
+
+    if (AL && typeof AL.canOpenUrl === 'function' && typeof AL.openUrl === 'function') {
+      try {
+        // 1) Test primary package name
+        if (app.packageName && !app.packageName.startsWith('search:')) {
+          const r = await AL.canOpenUrl({ url: app.packageName });
+          if (r && r.value) {
+            await AL.openUrl({ url: app.packageName });
+            return { success: true };
+          }
+        }
+
+        // Test fallback package if any (e.g. TikTok, Free Fire)
+        if (app.fallbackPackage) {
+          const r2 = await AL.canOpenUrl({ url: app.fallbackPackage });
+          if (r2 && r2.value) {
+            await AL.openUrl({ url: app.fallbackPackage });
+            return { success: true };
+          }
+        }
+
+        // 3) Else try web URL with window.open(url, "_system") and notify user not installed
+        const fallbackUrl = app.webFallback || `https://play.google.com/store/search?q=${encodeURIComponent(app.name)}&c=apps`;
+        window.open(fallbackUrl, '_system');
+        return { success: false, notInstalled: true };
+      } catch (err) {
+        console.warn('AppLauncher exception:', err);
+        const fallbackUrl = app.webFallback || `https://play.google.com/store/search?q=${encodeURIComponent(app.name)}&c=apps`;
+        window.open(fallbackUrl, '_system');
+        return { success: false, notInstalled: true };
       }
+    }
+
+    // Standard browser fallback (preview/desktop)
+    try {
+      const fallbackUrl = app.webFallback || `https://play.google.com/store/search?q=${encodeURIComponent(app.name)}&c=apps`;
+      window.open(fallbackUrl, '_blank');
+      return { success: true };
+    } catch {
+      return { success: false };
     }
   };
 
@@ -641,7 +760,7 @@ export default function App() {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Check Feature 5: Open Phone App Command
+    // Problem A: Open Phone App Command
     const appDetection = detectAppCommand(rawText);
     if (appDetection.isAppCommand && appDetection.app) {
       const app = appDetection.app;
@@ -659,10 +778,15 @@ export default function App() {
       playChime('gadget');
       speakReply(doraReplyText);
 
-      // Execute launch after friendly confirmation
-      setTimeout(() => {
-        executeAppLaunch(app);
-      }, 700);
+      // Automatically launch the app without waiting for button click
+      setTimeout(async () => {
+        const result = await executeAppLaunch(app);
+        if (result.notInstalled) {
+          speakReply('Ye app phone mein install nahi mila');
+        }
+      }, 600);
+
+      // IMPORTANT: Return immediately, NEVER send open app command to the AI model!
       return;
     }
 
@@ -691,7 +815,19 @@ export default function App() {
       content: m.text
     }));
 
-    const systemPrompt = `You are Doraemon, the robot cat from the future. Be smart, accurate and detailed like a top AI assistant, but speak with Doraemon's warm, funny personality. ALWAYS reply in the same language the user used (Urdu, Hindi, Roman Urdu/Hinglish or English). Keep answers clear and helpful. Doraemon is from the 22nd century, sent back by Nobita's great-grandson Sewashi to help Nobita. Use light friendly phrases like "Arre waah!", "Nobita", "Chalo dekhte hain!", "Main hoon na!".`;
+    // Problem B: Strict Reply Language Rules
+    const langLabelMap: Record<LanguageMode, string> = {
+      auto: 'Auto (match user\'s language: English, Urdu script, or Roman Urdu)',
+      en: 'English',
+      ur: 'Urdu (in Urdu script: اردو)',
+      roman_ur: 'Roman Urdu (Urdu written in English/Latin letters only, NEVER Urdu script)'
+    };
+
+    const chosenLangSpec = langLabelMap[selectedLangMode];
+
+    const systemPrompt = `You are Doraemon, the robot cat from the future. Be smart, accurate and detailed like a top AI assistant, but speak with Doraemon's warm, funny personality. Doraemon is from the 22nd century, sent back by Nobita's great-grandson Sewashi to help Nobita. Use light friendly phrases like "Arre waah!", "Nobita", "Chalo dekhte hain!", "Main hoon na!".
+
+Reply ONLY in the language the user last used. English message -> English reply. Urdu script -> Urdu script reply. Roman Urdu/Hinglish (Urdu written in English letters) -> Roman Urdu reply in English letters, never Urdu script. If the user selected a language in the app, always use that language: ${chosenLangSpec}. Never reply in Korean, Hindi script or any other language unless the user asks.`;
 
     let activeModel = selectedChatModel || localStorage.getItem('groq_chat_model') || 'llama-3.1-8b-instant';
 
@@ -865,28 +1001,63 @@ export default function App() {
 
         try {
           const activeWhisper = selectedWhisperModel || localStorage.getItem('groq_whisper_model') || 'whisper-large-v3-turbo';
+          let transcript = '';
 
-          // Send audio to Groq Whisper
-          const formData = new FormData();
-          formData.append('file', audioBlob, 'audio.webm');
-          formData.append('model', activeWhisper);
+          // Problem B: Language-controlled transcription
+          if (selectedLangMode === 'en') {
+            const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en');
+            transcript = cleanTranscriptionText(res.text);
+          } else if (selectedLangMode === 'ur') {
+            const res = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'ur');
+            transcript = cleanTranscriptionText(res.text);
+          } else if (selectedLangMode === 'roman_ur') {
+            // Roman Urdu mode: send language="ur" with Roman Urdu prompt
+            const res = await requestGroqWhisper(
+              audioBlob,
+              groqKey,
+              activeWhisper,
+              'ur',
+              'Ye Roman Urdu mein hai: kaise ho, mujhe batao, kya haal hai'
+            );
+            transcript = cleanTranscriptionText(res.text);
+          } else {
+            // Auto mode: response_format=verbose_json, inspect detected language
+            const res = await requestGroqWhisper(
+              audioBlob,
+              groqKey,
+              activeWhisper,
+              undefined,
+              'Urdu, English, Roman Urdu speech: kaise ho, how are you, batao'
+            );
 
-          const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${groqKey.trim()}`
-            },
-            body: formData
-          });
+            const detLang = (res.language || '').toLowerCase();
+            const isAllowed = ['en', 'ur', 'hi', 'english', 'urdu', 'hindi'].includes(detLang);
 
-          if (!whisperResponse.ok) {
-            const errJson = await whisperResponse.json().catch(() => ({}));
-            const whisperErr = errJson?.error?.message || `HTTP ${whisperResponse.status}`;
-            throw new Error(whisperErr);
+            if (!isAllowed || hasForeignScript(res.text) || !res.text) {
+              console.warn(`Whisper detected foreign language '${detLang}', retrying with 'ur'...`);
+              try {
+                // Immediately retry with language="ur"
+                const retryUr = await requestGroqWhisper(
+                  audioBlob,
+                  groqKey,
+                  activeWhisper,
+                  'ur',
+                  'Ye Roman Urdu ya Urdu speech hai'
+                );
+                if (retryUr.text && !hasForeignScript(retryUr.text)) {
+                  transcript = cleanTranscriptionText(retryUr.text);
+                } else {
+                  throw new Error('Urdu retry garbled');
+                }
+              } catch {
+                // If text is still garbled, try "en"
+                const retryEn = await requestGroqWhisper(audioBlob, groqKey, activeWhisper, 'en');
+                transcript = cleanTranscriptionText(retryEn.text);
+              }
+            } else {
+              transcript = cleanTranscriptionText(res.text);
+            }
           }
-
-          const whisperData = await whisperResponse.json();
-          const transcript = whisperData.text?.trim();
 
           if (transcript) {
             // Trigger send message with voice input flag
@@ -1074,8 +1245,24 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right: Quick Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Right: Quick Action Controls & Language Switcher */}
+        <div className="flex items-center gap-1.5 md:gap-2">
+          {/* Problem B: Language Switcher (Auto, English, Urdu, Roman Urdu) */}
+          <div className="relative">
+            <select
+              value={selectedLangMode}
+              onChange={(e) => handleLangModeChange(e.target.value as LanguageMode)}
+              className="appearance-none bg-white/20 hover:bg-white/30 text-white font-bold text-xs py-1.5 pl-6 pr-2.5 rounded-full border border-white/40 outline-none cursor-pointer transition shadow-xs"
+              title="Voice & Chat Language"
+            >
+              <option value="auto" className="text-slate-900 bg-white">🌐 Auto</option>
+              <option value="en" className="text-slate-900 bg-white">🇬🇧 English</option>
+              <option value="ur" className="text-slate-900 bg-white">🇵🇰 اردو (Urdu)</option>
+              <option value="roman_ur" className="text-slate-900 bg-white">💬 Roman Urdu</option>
+            </select>
+            <Globe className="w-3.5 h-3.5 text-white absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
           {/* Stop Speaking Button (active only when speaking) */}
           {isSpeaking && (
             <button
@@ -1196,38 +1383,31 @@ export default function App() {
                   {msg.text}
                 </p>
 
-                {/* Feature 5: App Action Card inside Bubble */}
+                {/* Problem A: Automatic App Launcher Card with only a small 'Dobara koshish' fallback */}
                 {msg.appAction && (
-                  <div className="mt-3 p-2.5 rounded-xl bg-sky-50 border border-sky-200 flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-sky-950 flex items-center gap-1.5">
-                        <Smartphone className="w-3.5 h-3.5 text-[#0AA1DD]" />
-                        {msg.appAction.name}
+                  <div className="mt-2.5 p-2 px-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-7 h-7 rounded-lg bg-[#0AA1DD] text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Smartphone className="w-4 h-4" />
                       </span>
-                      <span className="text-[10px] text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded font-mono">
-                        Android Intent
-                      </span>
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-slate-800 truncate">{msg.appAction.name}</div>
+                        <div className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                          App khol diya gaya hai
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => executeAppLaunch(msg.appAction!)}
-                        className="flex-1 py-1.5 px-3 rounded-lg bg-[#0AA1DD] text-white font-bold text-xs hover:bg-sky-600 active:scale-95 transition flex items-center justify-center gap-1 shadow-sm"
+                        className="py-1 px-2.5 rounded-lg bg-white border border-sky-300 text-sky-800 text-[11px] font-bold hover:bg-sky-100 active:scale-95 transition shadow-xs flex items-center gap-1"
+                        title="Agar app nahi khula to dobara koshish karein"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Launch {msg.appAction.name}
+                        <RotateCcw className="w-3 h-3 text-[#0AA1DD]" />
+                        <span>Dobara koshish</span>
                       </button>
-
-                      {msg.appAction.webFallback && (
-                        <a
-                          href={msg.appAction.webFallback}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="py-1.5 px-3 rounded-lg bg-white border border-sky-300 text-sky-700 font-medium text-xs hover:bg-sky-100 transition"
-                        >
-                          Web
-                        </a>
-                      )}
                     </div>
                   </div>
                 )}
@@ -1480,6 +1660,23 @@ export default function App() {
                   </span>
                   <span>{availableChatModels.length} models available</span>
                 </div>
+              </div>
+
+              {/* Language Control Setting */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Voice & Response Language
+                </label>
+                <select
+                  value={selectedLangMode}
+                  onChange={(e) => handleLangModeChange(e.target.value as LanguageMode)}
+                  className="w-full py-2.5 px-3 text-xs md:text-sm font-semibold border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD]"
+                >
+                  <option value="auto">🌐 Auto (English, Urdu, or Roman Urdu detect)</option>
+                  <option value="en">🇬🇧 English</option>
+                  <option value="ur">🇵🇰 اردو (Urdu Script)</option>
+                  <option value="roman_ur">💬 Roman Urdu (English alphabet only)</option>
+                </select>
               </div>
 
               {/* Status or Toast Message */}
