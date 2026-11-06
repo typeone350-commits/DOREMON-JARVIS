@@ -518,6 +518,13 @@ interface CapacitorWindow {
           listenerFunc: (state: { isActive: boolean }) => void
         ) => Promise<{ remove: () => void }>;
       };
+      JarvisBridge?: {
+        saveConfig: (config: { key: string; model: string; lang: 'auto' | 'en' | 'ur' | 'roman' }) => Promise<unknown>;
+        askPermissions: () => Promise<unknown>;
+        startOverlay: () => Promise<unknown>;
+        stopOverlay: () => Promise<unknown>;
+        status: () => Promise<{ overlay: boolean; running: boolean; mic: boolean }>;
+      };
     };
   };
 }
@@ -817,10 +824,118 @@ export default function App() {
     return (localStorage.getItem('doraemon_lang_mode') as LanguageMode) || 'auto';
   });
 
+  // Floating Doraemon (JarvisBridge native plugin for APK)
+  const [hasJarvisBridge, setHasJarvisBridge] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && Boolean((window as unknown as CapacitorWindow)?.Capacitor?.Plugins?.JarvisBridge);
+  });
+  const [bridgeStatus, setBridgeStatus] = useState<{ overlay: boolean; running: boolean; mic: boolean } | null>(null);
+  const [overlayMessage, setOverlayMessage] = useState<string>('');
+  const [isOverlayLoading, setIsOverlayLoading] = useState<boolean>(false);
+
+  // 1. Config sync: call JarvisBridge.saveConfig({ key: <saved Groq key>, model: <currently selected chat model>, lang: <"auto" | "en" | "ur" | "roman"> })
+  // on app start and every time the key, model or language changes.
+  const syncJarvisConfig = useCallback(async (keyOverride?: string, modelOverride?: string, langOverride?: LanguageMode) => {
+    const win = window as unknown as CapacitorWindow;
+    const JB = win.Capacitor?.Plugins?.JarvisBridge;
+    if (!JB || typeof JB.saveConfig !== 'function') return;
+
+    const activeKey = keyOverride !== undefined ? keyOverride : groqKey;
+    const activeModel = modelOverride !== undefined ? modelOverride : (selectedChatModel || 'llama-3.1-8b-instant');
+    const activeLang = langOverride !== undefined ? langOverride : selectedLangMode;
+    const mappedLang: 'auto' | 'en' | 'ur' | 'roman' = activeLang === 'roman_ur' ? 'roman' : (activeLang as 'auto' | 'en' | 'ur');
+
+    try {
+      await JB.saveConfig({
+        key: activeKey,
+        model: activeModel,
+        lang: mappedLang
+      });
+    } catch (err) {
+      console.warn('JarvisBridge.saveConfig error:', err);
+    }
+  }, [groqKey, selectedChatModel, selectedLangMode]);
+
+  // 4. Refresh status using JarvisBridge.status() -> { overlay, running, mic }
+  const refreshBridgeStatus = useCallback(async () => {
+    const win = window as unknown as CapacitorWindow;
+    const JB = win.Capacitor?.Plugins?.JarvisBridge;
+    if (JB) {
+      setHasJarvisBridge(true);
+      if (typeof JB.status === 'function') {
+        try {
+          const s = await JB.status();
+          setBridgeStatus(s);
+        } catch (err) {
+          console.warn('JarvisBridge.status error:', err);
+        }
+      }
+    } else {
+      setHasJarvisBridge(false);
+    }
+  }, []);
+
   const handleLangModeChange = (mode: LanguageMode) => {
     setSelectedLangMode(mode);
     localStorage.setItem('doraemon_lang_mode', mode);
     playChime('pop');
+    syncJarvisConfig(undefined, undefined, mode);
+  };
+
+  // 2. Big button "Floating Doraemon ON"
+  const handleStartOverlay = async () => {
+    const win = window as unknown as CapacitorWindow;
+    const JB = win.Capacitor?.Plugins?.JarvisBridge;
+    if (!JB) return;
+
+    setIsOverlayLoading(true);
+    setOverlayMessage('');
+
+    try {
+      await syncJarvisConfig();
+      await JB.askPermissions();
+      await JB.startOverlay();
+      setOverlayMessage('Doraemon ab dusri apps par bhi dikhega');
+      await refreshBridgeStatus();
+    } catch (err: unknown) {
+      console.warn('startOverlay error:', err);
+      const errAny = err as Record<string, unknown> | Error | string;
+      const msgStr = (
+        (err instanceof Error ? err.message : '') + ' ' +
+        (typeof errAny === 'object' && errAny !== null ? JSON.stringify(errAny) : String(errAny))
+      ).toLowerCase();
+
+      if (msgStr.includes('overlay_permission')) {
+        setOverlayMessage('Settings khul rahi hai: Display over other apps allow karo, phir app mein wapis aa kar dobara dabao');
+      } else if (msgStr.includes('mic_permission')) {
+        setOverlayMessage('Mic permission allow karo, phir dobara dabao');
+      } else {
+        const fallbackMsg = err instanceof Error ? err.message : String(err);
+        setOverlayMessage(`Error: ${fallbackMsg || 'Permission reject ho gayi. Dobara koshish karein.'}`);
+      }
+      await refreshBridgeStatus();
+    } finally {
+      setIsOverlayLoading(false);
+    }
+  };
+
+  // 3. Button "Floating Doraemon OFF"
+  const handleStopOverlay = async () => {
+    const win = window as unknown as CapacitorWindow;
+    const JB = win.Capacitor?.Plugins?.JarvisBridge;
+    if (!JB || typeof JB.stopOverlay !== 'function') return;
+
+    setIsOverlayLoading(true);
+    try {
+      await JB.stopOverlay();
+      setOverlayMessage('Floating Doraemon band kar diya gaya hai');
+      await refreshBridgeStatus();
+    } catch (err) {
+      console.warn('stopOverlay error:', err);
+      setOverlayMessage(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      await refreshBridgeStatus();
+    } finally {
+      setIsOverlayLoading(false);
+    }
   };
 
   // Chat state
@@ -851,7 +966,24 @@ export default function App() {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
-  // Foreground & App resume listener: reset isBusy and cancel pending requests
+  // Sync config on app start and every time key, model, or language changes
+  useEffect(() => {
+    syncJarvisConfig();
+  }, [groqKey, selectedChatModel, selectedLangMode, syncJarvisConfig]);
+
+  // Initial bridge status check on mount
+  useEffect(() => {
+    refreshBridgeStatus();
+  }, [refreshBridgeStatus]);
+
+  // Refresh bridge status when Settings opens
+  useEffect(() => {
+    if (isSettingsOpen) {
+      refreshBridgeStatus();
+    }
+  }, [isSettingsOpen, refreshBridgeStatus]);
+
+  // Foreground & App resume listener: reset isBusy and refresh bridge status
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -860,6 +992,7 @@ export default function App() {
           chatAbortControllerRef.current = null;
         }
         setIsBusy(false);
+        refreshBridgeStatus();
       }
     };
 
@@ -878,6 +1011,7 @@ export default function App() {
               chatAbortControllerRef.current = null;
             }
             setIsBusy(false);
+            refreshBridgeStatus();
           }
         }).then(handle => {
           appListenerHandle = handle;
@@ -893,7 +1027,7 @@ export default function App() {
         appListenerHandle.remove();
       }
     };
-  }, []);
+  }, [refreshBridgeStatus]);
 
   // Refresh Groq models list and update selection
   const refreshModels = useCallback(async (key: string, keepModel?: string): Promise<{ chatModels: string[]; chosenChat: string; whisper: string } | null> => {
@@ -982,8 +1116,10 @@ export default function App() {
     const res = await refreshModels(trimmed);
     if (res && res.chosenChat) {
       setKeySaveMessage(`✅ API Key save ho gayi! Model: ${res.chosenChat}`);
+      syncJarvisConfig(trimmed, res.chosenChat, undefined);
     } else {
       setKeySaveMessage('✅ API Key successfully save ho gayi, Nobita!');
+      syncJarvisConfig(trimmed, undefined, undefined);
     }
 
     setTimeout(() => {
@@ -1003,6 +1139,7 @@ export default function App() {
     setSelectedChatModel('llama-3.1-8b-instant');
     setSelectedWhisperModel('whisper-large-v3-turbo');
     setKeySaveMessage('🗑️ API Key delete kar di gayi!');
+    syncJarvisConfig('', 'llama-3.1-8b-instant', undefined);
     setTimeout(() => setKeySaveMessage(''), 2000);
   };
 
@@ -2348,6 +2485,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
                     setSelectedChatModel(newModel);
                     localStorage.setItem('groq_chat_model', newModel);
                     setKeySaveMessage(`✅ Model badal kar "${newModel}" kar diya!`);
+                    syncJarvisConfig(undefined, newModel, undefined);
                   }}
                   disabled={isLoadingModels || availableChatModels.length === 0}
                   className="w-full py-2.5 px-3 text-xs md:text-sm font-mono border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD] focus:ring-2 focus:ring-sky-200"
@@ -2389,6 +2527,105 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   <option value="roman_ur">💬 Roman Urdu (English alphabet only)</option>
                 </select>
               </div>
+
+              {/* ========================================== */}
+              {/* FLOATING DORAEMON SECTION (JarvisBridge APK) */}
+              {/* Only exists inside APK; hide if undefined */}
+              {/* ========================================== */}
+              {(hasJarvisBridge || Boolean((window as unknown as CapacitorWindow)?.Capacitor?.Plugins?.JarvisBridge)) && (
+                <div className="p-4 bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-50/60 rounded-2xl border-2 border-sky-300 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-[#0AA1DD] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                        🔔
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                          Floating Doraemon
+                        </h3>
+                        <p className="text-[10px] text-slate-500">Screen overlay assistant</p>
+                      </div>
+                    </div>
+                    {bridgeStatus?.running && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Active
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 4. Status Display: JarvisBridge.status() -> {overlay, running, mic} */}
+                  {bridgeStatus && (
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className={`p-2 rounded-xl border ${bridgeStatus.running ? 'bg-white border-emerald-300 text-emerald-800 shadow-2xs' : 'bg-white/80 border-slate-200 text-slate-600'}`}>
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Status</div>
+                        <div className="font-bold flex items-center justify-center gap-1 mt-0.5 text-xs">
+                          <span className={`w-2 h-2 rounded-full ${bridgeStatus.running ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                          <span>{bridgeStatus.running ? 'Running' : 'Stopped'}</span>
+                        </div>
+                      </div>
+
+                      <div className={`p-2 rounded-xl border ${bridgeStatus.overlay ? 'bg-white border-sky-300 text-sky-800 shadow-2xs' : 'bg-white/80 border-amber-300 text-amber-800'}`}>
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Overlay</div>
+                        <div className="font-bold mt-0.5 text-xs">
+                          {bridgeStatus.overlay ? 'Allowed ✅' : 'Needed ⚠️'}
+                        </div>
+                      </div>
+
+                      <div className={`p-2 rounded-xl border ${bridgeStatus.mic ? 'bg-white border-emerald-300 text-emerald-800 shadow-2xs' : 'bg-white/80 border-amber-300 text-amber-800'}`}>
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Mic</div>
+                        <div className="font-bold mt-0.5 text-xs">
+                          {bridgeStatus.mic ? 'Allowed ✅' : 'Needed ⚠️'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2 & 3. Big ON Button & OFF Button */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleStartOverlay}
+                      disabled={isOverlayLoading}
+                      className="w-full py-3 px-4 rounded-xl bg-[#0AA1DD] hover:bg-sky-600 active:scale-98 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <span className="text-base">🔔</span>
+                      <span>Floating Doraemon ON</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleStopOverlay}
+                      disabled={isOverlayLoading}
+                      className="w-full py-2 px-4 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs shadow-2xs transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      <span>⏹️</span>
+                      <span>Floating Doraemon OFF</span>
+                    </button>
+                  </div>
+
+                  {/* Feedback / Error Message */}
+                  {overlayMessage && (
+                    <div className={`p-2.5 rounded-xl text-xs font-semibold border ${
+                      overlayMessage.includes('Doraemon ab dusri apps')
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        : overlayMessage.includes('Floating Doraemon band')
+                          ? 'bg-sky-50 border-sky-200 text-sky-900'
+                          : 'bg-amber-50 border-amber-200 text-amber-950'
+                    }`}>
+                      {overlayMessage}
+                    </div>
+                  )}
+
+                  {/* 5. Tip text */}
+                  <div className="p-2.5 rounded-xl bg-blue-100/70 border border-blue-200 text-[11px] text-slate-700 flex items-start gap-2">
+                    <span className="text-sm shrink-0">💡</span>
+                    <p className="leading-snug">
+                      Button ko dabake rakh kar bolo, ungli hataoge to jawab milega. Button ko ghumane ke liye jaldi se drag karo.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Status or Toast Message */}
               {keySaveMessage && (
