@@ -21,7 +21,8 @@ import {
   HelpCircle,
   Smartphone,
   Check,
-  RotateCcw
+  RotateCcw,
+  RefreshCw
 } from 'lucide-react';
 
 // ==========================================
@@ -304,6 +305,74 @@ function playChime(type: 'gadget' | 'pop' | 'bell') {
   }
 }
 
+// ==========================================
+// GROQ MODEL RESOLUTION & FILTERING
+// ==========================================
+const CHAT_MODEL_PRIORITY = [
+  'openai/gpt-oss-120b',
+  'llama-3.3-70b-versatile',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'openai/gpt-oss-20b',
+  'llama-3.1-8b-instant',
+];
+
+const NON_CHAT_SUBSTRINGS = ['whisper', 'guard', 'tts', 'orpheus', 'embed', 'distil-whisper'];
+
+function isChatModel(id: string): boolean {
+  const lower = id.toLowerCase();
+  return !NON_CHAT_SUBSTRINGS.some(sub => lower.includes(sub));
+}
+
+function pickBestChatModel(chatModels: string[], preferredModel?: string): string {
+  if (preferredModel && chatModels.includes(preferredModel)) {
+    return preferredModel;
+  }
+  for (const p of CHAT_MODEL_PRIORITY) {
+    if (chatModels.includes(p)) {
+      return p;
+    }
+  }
+  return chatModels[0] || 'llama-3.1-8b-instant';
+}
+
+function pickWhisperModel(allIds: string[]): string {
+  if (allIds.includes('whisper-large-v3-turbo')) {
+    return 'whisper-large-v3-turbo';
+  }
+  if (allIds.includes('whisper-large-v3')) {
+    return 'whisper-large-v3';
+  }
+  const anyWhisper = allIds.find(m => m.toLowerCase().includes('whisper'));
+  return anyWhisper || 'whisper-large-v3-turbo';
+}
+
+async function fetchGroqModelList(apiKey: string): Promise<{ all: string[]; chatModels: string[]; bestChat: string; whisper: string }> {
+  const response = await fetch('https://api.groq.com/openai/v1/models', {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey.trim()}`
+    }
+  });
+
+  if (!response.ok) {
+    const errJson = await response.json().catch(() => ({}));
+    const msg = errJson?.error?.message || `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  const json = await response.json();
+  const rawList: Array<{ id: string }> = Array.isArray(json?.data) ? json.data : [];
+  const allIds = rawList.map(m => m.id);
+
+  // Remove non-chat models
+  const chatModels = allIds.filter(isChatModel);
+  const bestChat = pickBestChatModel(chatModels);
+  const whisper = pickWhisperModel(allIds);
+
+  return { all: allIds, chatModels, bestChat, whisper };
+}
+
 // Message data structure
 interface Message {
   id: string;
@@ -322,6 +391,16 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [keySaveMessage, setKeySaveMessage] = useState<string>('');
 
+  // Groq Models state
+  const [availableChatModels, setAvailableChatModels] = useState<string[]>([]);
+  const [selectedChatModel, setSelectedChatModel] = useState<string>(() => {
+    return localStorage.getItem('groq_chat_model') || 'llama-3.1-8b-instant';
+  });
+  const [selectedWhisperModel, setSelectedWhisperModel] = useState<string>(() => {
+    return localStorage.getItem('groq_whisper_model') || 'whisper-large-v3-turbo';
+  });
+  const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
+
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState<string>('');
@@ -339,12 +418,43 @@ export default function App() {
   // Chat scroll container ref
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Load saved Groq key & chat history on initial mount
+  // Refresh Groq models list and update selection
+  const refreshModels = useCallback(async (key: string, keepModel?: string): Promise<{ chatModels: string[]; chosenChat: string; whisper: string } | null> => {
+    if (!key.trim()) return null;
+    setIsLoadingModels(true);
+    try {
+      const res = await fetchGroqModelList(key);
+      setAvailableChatModels(res.chatModels);
+
+      let chosenChat = '';
+      if (keepModel && res.chatModels.includes(keepModel)) {
+        chosenChat = keepModel;
+      } else {
+        chosenChat = pickBestChatModel(res.chatModels);
+      }
+
+      setSelectedChatModel(chosenChat);
+      setSelectedWhisperModel(res.whisper);
+      localStorage.setItem('groq_chat_model', chosenChat);
+      localStorage.setItem('groq_whisper_model', res.whisper);
+      return { chatModels: res.chatModels, chosenChat, whisper: res.whisper };
+    } catch (err: unknown) {
+      console.warn('Groq model fetch failed:', err);
+      return null;
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, []);
+
+  // Load saved Groq key, chat model & chat history on initial mount
   useEffect(() => {
     const savedKey = localStorage.getItem('groq_api_key') || '';
+    const savedModel = localStorage.getItem('groq_chat_model') || '';
     if (savedKey) {
       setGroqKey(savedKey);
       setKeyInput(savedKey);
+      // Call models list on app start
+      refreshModels(savedKey, savedModel);
     }
 
     const savedMessages = localStorage.getItem('doraemon_chat_history');
@@ -352,13 +462,12 @@ export default function App() {
       try {
         setMessages(JSON.parse(savedMessages));
       } catch {
-        // Fallback default greeting
         initGreeting();
       }
     } else {
       initGreeting();
     }
-  }, []);
+  }, [refreshModels]);
 
   const initGreeting = () => {
     const initial: Message = {
@@ -379,7 +488,7 @@ export default function App() {
   }, [messages]);
 
   // Handle Save Key
-  const handleSaveKey = () => {
+  const handleSaveKey = async () => {
     const trimmed = keyInput.trim();
     if (!trimmed) {
       setKeySaveMessage('⚠️ Kripya valid key daalein!');
@@ -390,19 +499,32 @@ export default function App() {
     }
     localStorage.setItem('groq_api_key', trimmed);
     setGroqKey(trimmed);
-    setKeySaveMessage('✅ API Key successfully save ho gayi, Nobita!');
+    setKeySaveMessage('🔄 Groq models list load ho rahi hai...');
+
     playChime('bell');
+    const res = await refreshModels(trimmed);
+    if (res && res.chosenChat) {
+      setKeySaveMessage(`✅ API Key save ho gayi! Model: ${res.chosenChat}`);
+    } else {
+      setKeySaveMessage('✅ API Key successfully save ho gayi, Nobita!');
+    }
+
     setTimeout(() => {
       setKeySaveMessage('');
       setIsSettingsOpen(false);
-    }, 1200);
+    }, 1400);
   };
 
   // Handle Delete Key
   const handleDeleteKey = () => {
     localStorage.removeItem('groq_api_key');
+    localStorage.removeItem('groq_chat_model');
+    localStorage.removeItem('groq_whisper_model');
     setGroqKey('');
     setKeyInput('');
+    setAvailableChatModels([]);
+    setSelectedChatModel('llama-3.1-8b-instant');
+    setSelectedWhisperModel('whisper-large-v3-turbo');
     setKeySaveMessage('🗑️ API Key delete kar di gayi!');
     setTimeout(() => setKeySaveMessage(''), 2000);
   };
@@ -571,7 +693,9 @@ export default function App() {
 
     const systemPrompt = `You are Doraemon, the robot cat from the future. Be smart, accurate and detailed like a top AI assistant, but speak with Doraemon's warm, funny personality. ALWAYS reply in the same language the user used (Urdu, Hindi, Roman Urdu/Hinglish or English). Keep answers clear and helpful. Doraemon is from the 22nd century, sent back by Nobita's great-grandson Sewashi to help Nobita. Use light friendly phrases like "Arre waah!", "Nobita", "Chalo dekhte hain!", "Main hoon na!".`;
 
-    try {
+    let activeModel = selectedChatModel || localStorage.getItem('groq_chat_model') || 'llama-3.1-8b-instant';
+
+    const executeChatCall = async (modelToUse: string) => {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -579,7 +703,7 @@ export default function App() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: modelToUse,
           messages: [
             { role: 'system', content: systemPrompt },
             ...historyWindow,
@@ -592,11 +716,50 @@ export default function App() {
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
-        const errMsg = errJson?.error?.message || `HTTP ${response.status}`;
-        throw new Error(errMsg);
+        const errMsg = errJson?.error?.message || errJson?.error?.code || `HTTP ${response.status}`;
+        const errObj = new Error(errMsg);
+        (errObj as unknown as { status: number }).status = response.status;
+        throw errObj;
       }
 
-      const data = await response.json();
+      return await response.json();
+    };
+
+    try {
+      let data;
+      try {
+        data = await executeChatCall(activeModel);
+      } catch (firstErr: unknown) {
+        const errStr = (firstErr instanceof Error ? firstErr.message : String(firstErr)).toLowerCase();
+        const isModelProblem =
+          errStr.includes('model_not_found') ||
+          errStr.includes('decommissioned') ||
+          errStr.includes('does not exist') ||
+          errStr.includes('do not have access') ||
+          errStr.includes('not have access') ||
+          (firstErr as { status?: number })?.status === 404;
+
+        if (isModelProblem) {
+          console.warn(`Model ${activeModel} failed with model error (${errStr}). Refreshing models & retrying once...`);
+          const refreshRes = await refreshModels(groqKey);
+          const currentList = refreshRes?.chatModels || availableChatModels;
+          const remainingModels = currentList.filter(m => m !== activeModel);
+          const nextModel = pickBestChatModel(remainingModels);
+
+          if (nextModel && nextModel !== activeModel) {
+            activeModel = nextModel;
+            setSelectedChatModel(nextModel);
+            localStorage.setItem('groq_chat_model', nextModel);
+            // Retry once with the next available model
+            data = await executeChatCall(nextModel);
+          } else {
+            throw firstErr;
+          }
+        } else {
+          throw firstErr;
+        }
+      }
+
       const reply = data?.choices?.[0]?.message?.content || 'Arre Nobita, mujhe samajh nahi aaya, dubara bolo na!';
 
       const doraMsg: Message = {
@@ -611,9 +774,9 @@ export default function App() {
 
     } catch (err: unknown) {
       const errString = err instanceof Error ? err.message : String(err);
-      let friendlyError = `Arre Nobita! Kuch gadbad ho gayi: ${errString}.`;
-      if (errString.toLowerCase().includes('api key') || errString.toLowerCase().includes('401')) {
-        friendlyError = 'Arre Nobita! Lagta hai Groq API key galat hai. Settings mein jaakar sahi key daalo!';
+      let friendlyError = `Arre Nobita! Groq ne yeh error diya: "${errString}".`;
+      if (errString.toLowerCase().includes('api key') || errString.toLowerCase().includes('401') || errString.toLowerCase().includes('invalid')) {
+        friendlyError = `Arre Nobita! Groq API key galat ya invalid lagti hai (${errString}). Settings mein jaakar sahi key daalo!`;
       } else if (!navigator.onLine) {
         friendlyError = 'Arre! Lagta hai internet chala gaya hai, dost!';
       }
@@ -701,10 +864,12 @@ export default function App() {
         setIsThinking(true);
 
         try {
+          const activeWhisper = selectedWhisperModel || localStorage.getItem('groq_whisper_model') || 'whisper-large-v3-turbo';
+
           // Send audio to Groq Whisper
           const formData = new FormData();
           formData.append('file', audioBlob, 'audio.webm');
-          formData.append('model', 'whisper-large-v3');
+          formData.append('model', activeWhisper);
 
           const whisperResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST',
@@ -716,7 +881,8 @@ export default function App() {
 
           if (!whisperResponse.ok) {
             const errJson = await whisperResponse.json().catch(() => ({}));
-            throw new Error(errJson?.error?.message || 'Whisper transcription failed');
+            const whisperErr = errJson?.error?.message || `HTTP ${whisperResponse.status}`;
+            throw new Error(whisperErr);
           }
 
           const whisperData = await whisperResponse.json();
@@ -728,10 +894,11 @@ export default function App() {
           } else {
             setIsThinking(false);
           }
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('Whisper transcription error:', err);
           setIsThinking(false);
-          const errText = 'Arre Nobita! Awaaz theek se sunai nahi di, ek baar aur bolo!';
+          const errString = err instanceof Error ? err.message : String(err);
+          const errText = `Arre Nobita! Whisper voice transcription mein error aaya: "${errString}". Ek baar settings mein check kar lo!`;
           setMessages(prev => [
             ...prev,
             {
@@ -870,13 +1037,22 @@ export default function App() {
 
           {/* Title & Status */}
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <h1 className="font-heading text-xl md:text-2xl font-extrabold text-white tracking-wide drop-shadow-md">
                 DOREMON JARVIS
               </h1>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-[#FFD700] text-slate-950 shadow-sm">
                 22nd Century
               </span>
+              {selectedChatModel && (
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/35 text-white border border-white/30 transition truncate max-w-[140px] md:max-w-[210px]"
+                  title={`Active Model: ${selectedChatModel} (Click to change)`}
+                >
+                  {selectedChatModel.replace(/^(openai\/|meta-llama\/)/, '')}
+                </button>
+              )}
             </div>
             <p className="text-xs text-sky-100 font-medium flex items-center gap-1.5">
               {isListening ? (
@@ -1242,6 +1418,68 @@ export default function App() {
                 <p className="mt-1.5 text-[11px] text-slate-500">
                   Yeh key browser ke <strong>localStorage</strong> mein save rahegi. Dubara daalne ki zaroorat nahi hogi!
                 </p>
+              </div>
+
+              {/* Feature 6: Groq Chat Model Selector & Refresh Button */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Groq Chat Model
+                  </label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!groqKey) {
+                        setKeySaveMessage('⚠️ Pehle Groq API key save karein!');
+                        return;
+                      }
+                      setKeySaveMessage('🔄 Models list refresh ho rahi hai...');
+                      const res = await refreshModels(groqKey);
+                      if (res) {
+                        setKeySaveMessage(`✅ ${res.chatModels.length} models mil gaye! Active: ${res.chosenChat}`);
+                      } else {
+                        setKeySaveMessage('⚠️ Models refresh nahi ho sake. Key check karein.');
+                      }
+                    }}
+                    disabled={isLoadingModels || !groqKey}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0AA1DD] hover:text-sky-700 disabled:opacity-50 transition"
+                    title="Groq se models list update karein"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
+                    <span>Refresh models</span>
+                  </button>
+                </div>
+
+                <select
+                  value={selectedChatModel}
+                  onChange={(e) => {
+                    const newModel = e.target.value;
+                    setSelectedChatModel(newModel);
+                    localStorage.setItem('groq_chat_model', newModel);
+                    setKeySaveMessage(`✅ Model badal kar "${newModel}" kar diya!`);
+                  }}
+                  disabled={isLoadingModels || availableChatModels.length === 0}
+                  className="w-full py-2.5 px-3 text-xs md:text-sm font-mono border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD] focus:ring-2 focus:ring-sky-200"
+                >
+                  {availableChatModels.length === 0 ? (
+                    <option value={selectedChatModel}>
+                      {groqKey ? 'Loading models list...' : 'Pehle API key save karein'}
+                    </option>
+                  ) : (
+                    availableChatModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m} {m === selectedChatModel ? '★ (active)' : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+
+                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>
+                    STT Model: <strong className="font-mono text-slate-700">{selectedWhisperModel}</strong>
+                  </span>
+                  <span>{availableChatModels.length} models available</span>
+                </div>
               </div>
 
               {/* Status or Toast Message */}
