@@ -16,7 +16,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm install --legacy-peer-deps
-      - run: npm install @capacitor/core@7 @capacitor/android@7 @capacitor/cli@7 @capacitor/app-launcher@7 --legacy-peer-deps
+      - run: npm install @capacitor/core@7 @capacitor/android@7 @capacitor/cli@7 @capacitor/app-launcher@7 @capacitor-community/text-to-speech --legacy-peer-deps
       - run: npx vite build
       - run: npx cap add android
       - name: Add permissions
