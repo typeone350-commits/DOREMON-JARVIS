@@ -1,0 +1,6 @@
+{
+  "name": "Doremon Jarvis",
+  "description": "Doremon Jarvis - Friendly 22nd century AI cat robot assistant powered by Groq LLaMA-3.3, Whisper speech-to-text, voice replies, and phone app launcher.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

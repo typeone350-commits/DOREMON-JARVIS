@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Fredoka', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  h1, h2, h3, .font-heading {
+    font-family: 'Baloo 2', 'Fredoka', cursive, sans-serif;
+  }
+}
+
+/* Animations for Doraemon features */
+@keyframes cloudFloat {
+  0% {
+    transform: translateX(-150px);
+  }
+  100% {
+    transform: translateX(calc(100vw + 150px));
+  }
+}
+
+@keyframes bellSwing {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-14deg);
+  }
+  75% {
+    transform: rotate(14deg);
+  }
+}
+
+@keyframes bellShake {
+  0%, 100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  20% {
+    transform: translate(-3px, 1px) rotate(-18deg) scale(1.1);
+  }
+  40% {
+    transform: translate(3px, -1px) rotate(18deg) scale(1.1);
+  }
+  60% {
+    transform: translate(-3px, -1px) rotate(-15deg) scale(1.1);
+  }
+  80% {
+    transform: translate(3px, 1px) rotate(15deg) scale(1.1);
+  }
+}
+
+@keyframes eyeBlink {
+  0%, 92%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes talkMouth {
+  0%, 100% {
+    height: 6px;
+    border-radius: 0 0 16px 16px;
+  }
+  50% {
+    height: 24px;
+    border-radius: 0 0 32px 32px;
+  }
+}
+
+@keyframes headBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes whisperWiggle {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-4deg);
+  }
+  75% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(230, 0, 18, 0.7);
+  }
+  70% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 20px rgba(230, 0, 18, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(230, 0, 18, 0);
+  }
+}
+
+.animate-cloud-slow {
+  animation: cloudFloat 45s linear infinite;
+}
+
+.animate-cloud-med {
+  animation: cloudFloat 32s linear infinite;
+}
+
+.animate-cloud-fast {
+  animation: cloudFloat 22s linear infinite;
+}
+
+.animate-bell-swing {
+  transform-origin: top center;
+  animation: bellSwing 2.6s ease-in-out infinite;
+}
+
+.animate-bell-shake {
+  transform-origin: top center;
+  animation: bellShake 0.28s ease-in-out infinite;
+}
+
+.animate-eye-blink {
+  animation: eyeBlink 4.5s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.animate-talk-mouth {
+  animation: talkMouth 0.25s ease-in-out infinite;
+}
+
+.animate-head-bounce {
+  animation: headBounce 0.4s ease-in-out infinite;
+}
+
+.animate-whisper-wiggle {
+  animation: whisperWiggle 0.6s ease-in-out infinite;
+}
+
+.animate-pulse-ring {
+  animation: pulseRing 1.3s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+}
+
+/* 4D Pocket Styling */
+.pocket-border {
+  border-bottom-left-radius: 40px;
+  border-bottom-right-radius: 40px;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+/* Custom scrollbar for Doraemon chat */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
