@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -22,9 +24,12 @@ jobs:
       - name: Native overlay files and permissions
         run: |
           D=android/app/src/main/java/com/tgmeta/doremonjarvis
-          cp MainActivity.java ScreenReaderService.java $D/
-          if [ -f "JarvisBridge(1).java" ]; then cp "JarvisBridge(1).java" $D/JarvisBridge.java; else cp JarvisBridge.java $D/JarvisBridge.java; fi
-          if [ -f "OverlayService(2).java" ]; then cp "OverlayService(2).java" $D/OverlayService.java; else cp OverlayService.java $D/OverlayService.java; fi
+          newest() { for f in "$1"*.java; do echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -1 | cut -d' ' -f2-; }
+          for c in MainActivity JarvisBridge OverlayService ScreenReaderService; do
+            F="$(newest $c)"
+            echo "Using $F for $c"
+            cp "$F" "$D/$c.java"
+          done
           mkdir -p android/app/src/main/res/xml
           cat > android/app/src/main/res/xml/screen_reader_config.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
