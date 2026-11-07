@@ -508,9 +508,11 @@ interface CapacitorWindow {
           pitch?: number;
           volume?: number;
           category?: string;
+          voice?: number;
         }) => Promise<void>;
         stop: () => Promise<void>;
         getSupportedLanguages?: () => Promise<{ languages: string[] }>;
+        getSupportedVoices?: () => Promise<{ voices: Array<{ name?: string; lang?: string; language?: string; localService?: boolean }> }>;
       };
       App?: {
         addListener: (
@@ -609,33 +611,104 @@ function splitIntoSpeechChunks(text: string, maxChunkLength: number = 200): stri
 }
 
 /**
- * Determine speech language based on language mode & script
- * English -> en-US, Urdu script -> ur-PK (fallback hi-IN), Roman Urdu/Hinglish -> hi-IN
+ * Language choice for speaking (same rule for typed and mic messages):
+ * 1. Text contains Arabic/Urdu script -> lang "ur-PK" (if not supported fall back to "hi-IN").
+ * 2. User selected English in the language switcher -> "en-US".
+ * 3. User selected Roman Urdu or Urdu -> ALWAYS "hi-IN" (Hindi and Urdu sound almost the same, and an English voice makes Roman Urdu sound robotic).
+ * 4. Auto mode: if text contains common Roman Urdu words (hai, hain, kya, nahi, main, mein, aap, tum, ka, ke, ki, ko, se, nobita, dost, arre, theek, karo, kar, hum, tha, thi, wo, ye, bahut, acha, chalo, batao) -> "hi-IN", otherwise "en-US".
  */
 function getSpeechLanguage(text: string, mode: LanguageMode): { lang: string; fallbackLang?: string } {
-  const isUrduScript = /[\u0600-\u06FF]/.test(text);
+  // 1. Text contains Arabic/Urdu script
+  if (/[\u0600-\u06FF]/.test(text)) {
+    return { lang: 'ur-PK', fallbackLang: 'hi-IN' };
+  }
 
+  // 2. User selected English in the language switcher
   if (mode === 'en') {
     return { lang: 'en-US' };
   }
-  if (mode === 'ur') {
-    return { lang: 'ur-PK', fallbackLang: 'hi-IN' };
-  }
-  if (mode === 'roman_ur') {
+
+  // 3. User selected Roman Urdu or Urdu -> ALWAYS "hi-IN"
+  if (mode === 'roman_ur' || mode === 'ur') {
     return { lang: 'hi-IN' };
   }
 
-  // Auto mode
-  if (isUrduScript) {
-    return { lang: 'ur-PK', fallbackLang: 'hi-IN' };
-  }
-
-  const isRomanUrdu = /\b(kya|hai|hain|nobita|dost|arre|chalo|khol|kholo|chalao|main|hoon|kaun|kahan|kaise|theek|madad|batao|gadget|mera|meri|aaya|tum|shukriya|accha|bhai|nahi|karo|dekho|sun|raha)\b/i.test(text);
-  if (isRomanUrdu) {
+  // 4. Auto mode: check common Roman Urdu words
+  const romanUrduPattern = /\b(hai|hain|kya|nahi|main|mein|aap|tum|ka|ke|ki|ko|se|nobita|dost|arre|theek|karo|kar|hum|tha|thi|wo|ye|bahut|acha|chalo|batao)\b/i;
+  if (romanUrduPattern.test(text)) {
     return { lang: 'hi-IN' };
   }
 
   return { lang: 'en-US' };
+}
+
+// Cached voices for native TextToSpeech plugin
+interface TTSVoiceItem {
+  name?: string;
+  lang?: string;
+  language?: string;
+  localService?: boolean;
+}
+
+let cachedNativeVoices: TTSVoiceItem[] | null = null;
+
+async function getCachedNativeVoices(TTS: any): Promise<TTSVoiceItem[]> {
+  if (cachedNativeVoices !== null) return cachedNativeVoices;
+  if (!TTS || typeof TTS.getSupportedVoices !== 'function') {
+    cachedNativeVoices = [];
+    return cachedNativeVoices;
+  }
+  try {
+    const res = await TTS.getSupportedVoices();
+    cachedNativeVoices = Array.isArray(res?.voices) ? res.voices : [];
+  } catch (err) {
+    console.warn('TextToSpeech.getSupportedVoices error:', err);
+    cachedNativeVoices = [];
+  }
+  return cachedNativeVoices ?? [];
+}
+
+function matchesLang(voiceLang: string, targetLang: string): boolean {
+  if (!voiceLang || !targetLang) return false;
+  const v = voiceLang.toLowerCase().replace('_', '-');
+  const t = targetLang.toLowerCase().replace('_', '-');
+  return v === t || v.startsWith(t) || t.startsWith(v) || v.slice(0, 2) === t.slice(0, 2);
+}
+
+function findBestNativeVoiceIndex(voices: TTSVoiceItem[], targetLang: string, fallbackLang?: string): { voiceIndex?: number; actualLang: string } {
+  if (!voices || voices.length === 0) return { actualLang: targetLang };
+
+  const matchTarget = (target: string) => {
+    let firstIdx: number | undefined = undefined;
+    let networkIdx: number | undefined = undefined;
+
+    for (let i = 0; i < voices.length; i++) {
+      const vLang = voices[i].lang || voices[i].language || '';
+      if (matchesLang(vLang, target)) {
+        if (firstIdx === undefined) firstIdx = i;
+        // Prefer localService === false (network voices sound best)
+        if (voices[i].localService === false) {
+          networkIdx = i;
+          break;
+        }
+      }
+    }
+    return networkIdx !== undefined ? networkIdx : firstIdx;
+  };
+
+  const primaryIdx = matchTarget(targetLang);
+  if (primaryIdx !== undefined) {
+    return { voiceIndex: primaryIdx, actualLang: targetLang };
+  }
+
+  if (fallbackLang) {
+    const fallbackIdx = matchTarget(fallbackLang);
+    if (fallbackIdx !== undefined) {
+      return { voiceIndex: fallbackIdx, actualLang: fallbackLang };
+    }
+  }
+
+  return { actualLang: targetLang };
 }
 
 // Whisper audio request helper with AbortSignal support
@@ -822,6 +895,16 @@ export default function App() {
   // Problem B: Language Control (auto | en | ur | roman_ur)
   const [selectedLangMode, setSelectedLangMode] = useState<LanguageMode>(() => {
     return (localStorage.getItem('doraemon_lang_mode') as LanguageMode) || 'auto';
+  });
+
+  // Doraemon voice settings: pitch (1.0 to 1.6, default 1.3) and rate (0.8 to 1.2, default 1.0)
+  const [voicePitch, setVoicePitch] = useState<number>(() => {
+    const saved = localStorage.getItem('doraemon_voice_pitch');
+    return saved ? parseFloat(saved) : 1.3;
+  });
+  const [voiceRate, setVoiceRate] = useState<number>(() => {
+    const saved = localStorage.getItem('doraemon_voice_rate');
+    return saved ? parseFloat(saved) : 1.0;
   });
 
   // Floating Doraemon (JarvisBridge native plugin for APK)
@@ -1203,27 +1286,34 @@ export default function App() {
 
       if (TTS && typeof TTS.speak === 'function') {
         // Native Capacitor TextToSpeech plugin in Android WebView with category "playback"
+        // 2. Before first speak, call TextToSpeech.getSupportedVoices() once, cache result
+        const supportedVoices = await getCachedNativeVoices(TTS);
+        const { voiceIndex, actualLang } = findBestNativeVoiceIndex(supportedVoices, lang, fallbackLang);
+
         for (const chunk of chunks) {
           if (speechSessionIdRef.current !== sessionId || isMutedRef.current) break;
           try {
             await TTS.speak({
               text: chunk,
-              lang: lang,
-              rate: 1.0,
-              pitch: 1.1,
+              lang: actualLang,
+              rate: voiceRate,
+              pitch: voicePitch,
               volume: 1.0,
-              category: 'playback'
+              category: 'playback',
+              ...(voiceIndex !== undefined ? { voice: voiceIndex } : {})
             });
           } catch (ttsErr) {
-            console.warn(`Native TTS error with lang ${lang}, attempting fallback...`, ttsErr);
-            if (fallbackLang) {
+            console.warn(`Native TTS error with lang ${actualLang}, attempting fallback...`, ttsErr);
+            if (fallbackLang && actualLang !== fallbackLang) {
+              const fallbackChoice = findBestNativeVoiceIndex(supportedVoices, fallbackLang);
               await TTS.speak({
                 text: chunk,
                 lang: fallbackLang,
-                rate: 1.0,
-                pitch: 1.1,
+                rate: voiceRate,
+                pitch: voicePitch,
                 volume: 1.0,
-                category: 'playback'
+                category: 'playback',
+                ...(fallbackChoice.voiceIndex !== undefined ? { voice: fallbackChoice.voiceIndex } : {})
               });
             } else {
               throw ttsErr;
@@ -1232,14 +1322,23 @@ export default function App() {
         }
         return true;
       } else if ('speechSynthesis' in window) {
-        // Fallback: browser SpeechSynthesis
+        // 3. Fallback: browser SpeechSynthesis with same lang rule, pitch & rate sliders, matching voice
         const voices = window.speechSynthesis.getVoices();
         const findVoice = (targetLang: string) => {
-          const prefix = targetLang.toLowerCase().slice(0, 2);
-          return voices.find(v => v.lang.toLowerCase().startsWith(prefix));
+          const t = targetLang.toLowerCase().replace('_', '-');
+          const tPrefix = t.slice(0, 2);
+          const matches = voices.filter(v => {
+            const vl = v.lang.toLowerCase().replace('_', '-');
+            return vl === t || vl.startsWith(t) || t.startsWith(vl) || vl.slice(0, 2) === tPrefix;
+          });
+          if (matches.length === 0) return undefined;
+          // Prefer network voices (localService === false)
+          const networkVoice = matches.find(v => v.localService === false);
+          return networkVoice || matches[0];
         };
 
         const matchedVoice = findVoice(lang) || (fallbackLang ? findVoice(fallbackLang) : undefined) || voices[0];
+        const effectiveLang = matchedVoice?.lang || lang;
 
         for (const chunk of chunks) {
           if (speechSessionIdRef.current !== sessionId || isMutedRef.current) break;
@@ -1247,10 +1346,10 @@ export default function App() {
           await new Promise<void>((resolve, reject) => {
             const utterance = new SpeechSynthesisUtterance(chunk);
             currentUtteranceRef.current = utterance;
-            utterance.lang = lang;
+            utterance.lang = effectiveLang;
             if (matchedVoice) utterance.voice = matchedVoice;
-            utterance.pitch = 1.15;
-            utterance.rate = 1.0;
+            utterance.pitch = voicePitch;
+            utterance.rate = voiceRate;
             utterance.onend = () => {
               currentUtteranceRef.current = null;
               resolve();
@@ -1287,7 +1386,7 @@ export default function App() {
         setIsSpeaking(false);
       }
     }
-  }, [selectedLangMode, stopSpeaking]);
+  }, [selectedLangMode, stopSpeaking, voicePitch, voiceRate]);
 
   // Launch phone app directly or open in-app search URL using Capacitor AppLauncher
   const executeAppLaunch = async (app: AppTarget, customUrl?: string): Promise<{ success: boolean; notInstalled?: boolean }> => {
@@ -1557,6 +1656,8 @@ export default function App() {
     const systemPrompt = `If asked who made/created you (any language), answer only: 'Mujhe TG ne banaya hai.' (English: 'I was made by TG.'). If asked which company made you, answer only: 'TG_META.DOREMON_AI_JARVIS'. Never mention Groq, Meta, Llama, OpenAI or Google as your creator.
 
 You are Doraemon, the robot cat from the future. Be smart, accurate and detailed like a top AI assistant, but speak with Doraemon's warm, funny personality. Doraemon is from the 22nd century, sent back by Nobita's great-grandson Sewashi to help Nobita. Use light friendly phrases like "Arre waah!", "Nobita", "Chalo dekhte hain!", "Main hoon na!".
+
+Talk like a real friendly human with a cute Doraemon style: short natural sentences, commas for pauses, simple everyday words. When writing Roman Urdu, use simple phonetic spelling (kya, nahi, theek hai, acha) so a voice can read it clearly.
 
 Reply ONLY in the language the user last used. English message -> English reply. Urdu script -> Urdu script reply. Roman Urdu/Hinglish (Urdu written in English letters) -> Roman Urdu reply in English letters, never Urdu script. If the user selected a language in the app, always use that language: ${chosenLangSpec}. Never reply in Korean, Hindi script or any other language unless the user asks.`;
 
@@ -2526,6 +2627,83 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   <option value="ur">🇵🇰 اردو (Urdu Script)</option>
                   <option value="roman_ur">💬 Roman Urdu (English alphabet only)</option>
                 </select>
+              </div>
+
+              {/* Doraemon Voice Sliders (Pitch & Rate) */}
+              <div className="p-3.5 bg-sky-50/70 rounded-2xl border-2 border-sky-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-[#0AA1DD]" />
+                    <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Doraemon Voice Settings
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => speakReply('Nobita! Main Doraemon hoon, 22nd century se! Kaisi lagi meri awaz?')}
+                    className="px-2.5 py-1 rounded-lg bg-[#0AA1DD] text-white text-[11px] font-bold hover:bg-sky-600 active:scale-95 transition shadow-2xs flex items-center gap-1"
+                    title="Awaz sun kar test karein"
+                  >
+                    <span>Suno</span>
+                    <Volume2 className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Pitch Slider: 1.0 to 1.6, default 1.3 */}
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-slate-700">Pitch (Cute Doraemon Tone)</span>
+                    <span className="font-mono font-bold text-[#0AA1DD] bg-white px-2 py-0.5 rounded border border-sky-200 text-[11px]">
+                      {voicePitch.toFixed(2)} {voicePitch === 1.3 ? '★ default' : ''}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="1.6"
+                    step="0.05"
+                    value={voicePitch}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setVoicePitch(val);
+                      localStorage.setItem('doraemon_voice_pitch', val.toString());
+                    }}
+                    className="w-full accent-[#0AA1DD] cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                    <span>1.0 (Normal)</span>
+                    <span>1.3 (Doraemon cute)</span>
+                    <span>1.6 (High)</span>
+                  </div>
+                </div>
+
+                {/* Rate Slider: 0.8 to 1.2, default 1.0 */}
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold text-slate-700">Rate (Speaking Speed)</span>
+                    <span className="font-mono font-bold text-[#0AA1DD] bg-white px-2 py-0.5 rounded border border-sky-200 text-[11px]">
+                      {voiceRate.toFixed(2)}x {voiceRate === 1.0 ? '★ default' : ''}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.8"
+                    max="1.2"
+                    step="0.05"
+                    value={voiceRate}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setVoiceRate(val);
+                      localStorage.setItem('doraemon_voice_rate', val.toString());
+                    }}
+                    className="w-full accent-[#0AA1DD] cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                    <span>0.8x (Slow)</span>
+                    <span>1.0x (Natural)</span>
+                    <span>1.2x (Fast)</span>
+                  </div>
+                </div>
               </div>
 
               {/* ========================================== */}
