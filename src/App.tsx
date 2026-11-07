@@ -2805,6 +2805,36 @@ Reply ONLY in the language the user last used. English message -> English reply.
                 </div>
               )}
 
+              {/* Screen Reader Card */}
+              <div className="p-4 bg-gradient-to-br from-indigo-50/70 via-sky-50 to-blue-50/60 rounded-2xl border-2 border-indigo-200 shadow-xs space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                    📖
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Screen Reader
+                    </h3>
+                    <p className="text-[10px] text-slate-500">Screen text padhne ka tareeqa</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-xs text-slate-700 leading-relaxed">
+                  <p>
+                    <strong className="text-indigo-800">a)</strong> Pehle Floating Doraemon ON karein.
+                  </p>
+                  <p>
+                    <strong className="text-indigo-800">b)</strong> Jis app ya screen par text padhna ho wahan jayein.
+                  </p>
+                  <p>
+                    c) Floating Doraemon dabake bolo &apos;on screen reader&apos;. Nila frame aayega, usay padhne wali jagah par rakho (kono se bada chhota karo), phir Doraemon dabake bolo &apos;read&apos; (Urdu mein sunega) ya &apos;read in English&apos;. Band karne ke liye bolo &apos;screen reader off&apos;.
+                  </p>
+                  <p className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-medium">
+                    Frame ke upar ungli rakhne se neeche wali app touch nahi hoti. Scroll karna ho to &apos;screen reader off&apos; bolo.
+                  </p>
+                </div>
+              </div>
+
               {/* Status or Toast Message */}
               {keySaveMessage && (
                 <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-900 font-medium">
