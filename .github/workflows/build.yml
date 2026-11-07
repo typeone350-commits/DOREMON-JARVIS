@@ -21,9 +21,24 @@ jobs:
       - run: npx cap add android
       - name: Native overlay files and permissions
         run: |
-          cp MainActivity.java JarvisBridge.java OverlayService.java android/app/src/main/java/com/tgmeta/doremonjarvis/
+          D=android/app/src/main/java/com/tgmeta/doremonjarvis
+          cp MainActivity.java ScreenReaderService.java $D/
+          if [ -f "JarvisBridge(1).java" ]; then cp "JarvisBridge(1).java" $D/JarvisBridge.java; else cp JarvisBridge.java $D/JarvisBridge.java; fi
+          if [ -f "OverlayService(2).java" ]; then cp "OverlayService(2).java" $D/OverlayService.java; else cp OverlayService.java $D/OverlayService.java; fi
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/screen_reader_config.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagIncludeNotImportantViews"
+              android:canRetrieveWindowContent="true"
+              android:canTakeScreenshot="true"
+              android:notificationTimeout="200"
+              android:description="@string/app_name" />
+          EOF
           sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application#' android/app/src/main/AndroidManifest.xml
-          sed -i 's#</application>#<service android:name=".OverlayService" android:exported="false" android:foregroundServiceType="microphone" />\n    </application>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</application>#<service android:name=".OverlayService" android:exported="false" android:foregroundServiceType="microphone" />\n        <service android:name=".ScreenReaderService" android:exported="true" android:label="Doraemon Screen Reader" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/screen_reader_config" /></service>\n    </application>#' android/app/src/main/AndroidManifest.xml
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
