@@ -24,7 +24,9 @@ import {
   RotateCcw,
   RefreshCw,
   Globe,
-  Search
+  Search,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 // ==========================================
@@ -882,6 +884,39 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [keySaveMessage, setKeySaveMessage] = useState<string>('');
 
+  // Collapsible cards in Settings: only 'groqKey' is open by default
+  const [openSections, setOpenSections] = useState<{
+    groqKey: boolean;
+    modelLang: boolean;
+    voice: boolean;
+    floating: boolean;
+    help: boolean;
+  }>({
+    groqKey: true,
+    modelLang: false,
+    voice: false,
+    floating: false,
+    help: false,
+  });
+
+  const toggleSection = (section: keyof typeof openSections) => {
+    setOpenSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  // Prevent page body scrolling behind Settings overlay (restore on close)
+  useEffect(() => {
+    if (isSettingsOpen) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [isSettingsOpen]);
+
   // Groq Models state
   const [availableChatModels, setAvailableChatModels] = useState<string[]>([]);
   const [selectedChatModel, setSelectedChatModel] = useState<string>(() => {
@@ -1181,8 +1216,64 @@ export default function App() {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle Save Key
+  // Auto-save debounce timer ref
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-save function: save key on input (600ms debounce) or blur, refresh models, show "Key save ho gayi"
+  const autoSaveKey = useCallback(async (keyToSave: string) => {
+    const trimmed = keyToSave.trim();
+    if (!trimmed) return;
+    const currentSaved = localStorage.getItem('groq_api_key') || '';
+    if (trimmed === currentSaved) return;
+
+    localStorage.setItem('groq_api_key', trimmed);
+    setGroqKey(trimmed);
+    setKeySaveMessage('✅ Key save ho gayi');
+    syncJarvisConfig(trimmed, undefined, undefined);
+
+    try {
+      const res = await refreshModels(trimmed);
+      if (res && res.chosenChat) {
+        setKeySaveMessage('✅ Key save ho gayi');
+        syncJarvisConfig(trimmed, res.chosenChat, undefined);
+      }
+    } catch (err) {
+      console.warn('Auto-save model refresh error:', err);
+    }
+
+    setTimeout(() => {
+      setKeySaveMessage('');
+    }, 2500);
+  }, [refreshModels, syncJarvisConfig]);
+
+  const handleKeyInputChange = (newVal: string) => {
+    setKeyInput(newVal);
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const trimmed = newVal.trim();
+    if (trimmed && trimmed.length >= 8) {
+      autoSaveTimerRef.current = setTimeout(() => {
+        autoSaveKey(trimmed);
+      }, 600);
+    }
+  };
+
+  const handleKeyInputBlur = () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const trimmed = keyInput.trim();
+    if (trimmed && trimmed.length >= 8) {
+      autoSaveKey(trimmed);
+    }
+  };
+
+  // Handle Save Key from Footer button
   const handleSaveKey = async () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
     const trimmed = keyInput.trim();
     if (!trimmed) {
       setKeySaveMessage('⚠️ Kripya valid key daalein!');
@@ -1198,17 +1289,17 @@ export default function App() {
     playChime('bell');
     const res = await refreshModels(trimmed);
     if (res && res.chosenChat) {
-      setKeySaveMessage(`✅ API Key save ho gayi! Model: ${res.chosenChat}`);
+      setKeySaveMessage('✅ Key save ho gayi');
       syncJarvisConfig(trimmed, res.chosenChat, undefined);
     } else {
-      setKeySaveMessage('✅ API Key successfully save ho gayi, Nobita!');
+      setKeySaveMessage('✅ Key save ho gayi');
       syncJarvisConfig(trimmed, undefined, undefined);
     }
 
     setTimeout(() => {
       setKeySaveMessage('');
       setIsSettingsOpen(false);
-    }, 1400);
+    }, 1200);
   };
 
   // Handle Delete Key
@@ -2498,408 +2589,591 @@ Reply ONLY in the language the user last used. English message -> English reply.
       {/* FEATURE 2: SETTINGS MODAL (GROQ API KEY)   */}
       {/* ========================================== */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="relative w-full max-w-md bg-white border-3 border-slate-900 rounded-3xl p-6 shadow-2xl overflow-hidden font-sans">
-            {/* Modal Top Doraemon Banner */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#0AA1DD] border border-slate-900 flex items-center justify-center text-white">
-                  <Key className="w-4 h-4" />
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-0 sm:p-4"
+          style={{ height: '100dvh' }}
+        >
+          <div
+            className="w-full max-w-md h-full bg-white flex flex-col overflow-hidden shadow-2xl border-x sm:border sm:border-slate-900 sm:rounded-3xl"
+            style={{ height: '100dvh', maxHeight: '100dvh' }}
+          >
+            {/* 1. FIXED HEADER AT THE TOP */}
+            <div
+              className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-gradient-to-r from-sky-50 via-white to-blue-50 border-b border-slate-200"
+              style={{ height: '60px' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[#0AA1DD] border border-slate-900 flex items-center justify-center text-white shadow-xs">
+                  <Settings className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="font-heading text-lg font-bold text-slate-900">
-                    Groq API Key Settings
+                  <h2 className="font-heading text-base font-bold text-slate-900 leading-tight">
+                    Settings
                   </h2>
-                  <p className="text-xs text-slate-500">22nd Century AI Configuration</p>
+                  <p className="text-[10px] text-slate-500">22nd Century AI Configuration</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setIsSettingsOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm transition"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 flex items-center justify-center font-bold text-sm transition"
+                aria-label="Close Settings"
               >
                 ✕
               </button>
             </div>
 
-            {/* Content Body */}
-            <div className="py-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Groq API Key (starts with &quot;gsk_&quot;)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showKeyText ? 'text' : 'password'}
-                    value={keyInput}
-                    onChange={(e) => setKeyInput(e.target.value)}
-                    placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxx..."
-                    className="w-full py-2.5 pl-3 pr-10 text-xs md:text-sm font-mono border-2 border-slate-300 rounded-xl outline-none focus:border-[#0AA1DD] focus:ring-2 focus:ring-sky-200"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKeyText(!showKeyText)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                    title={showKeyText ? 'Hide key' : 'Show key'}
-                  >
-                    {showKeyText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+            {/* 2. MIDDLE AREA THAT SCROLLS (dvh, touch scroll, contain, padding-bottom: 120px, min-height: 0) */}
+            <div
+              className="flex-1 min-h-0 px-4 py-4 space-y-3 bg-slate-50/60"
+              style={{
+                height: 'calc(100dvh - 60px - 72px)',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                overscrollBehavior: 'contain',
+                paddingBottom: '120px',
+                minHeight: 0,
+              }}
+            >
+              {/* Toast / Status Message */}
+              {keySaveMessage && (
+                <div className="p-2.5 rounded-xl bg-sky-50 border-2 border-sky-300 text-xs text-sky-900 font-semibold shadow-2xs flex items-center gap-2 sticky top-0 z-10 backdrop-blur-sm">
+                  <span className="text-sm">🔔</span>
+                  <span className="flex-1">{keySaveMessage}</span>
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  Yeh key browser ke <strong>localStorage</strong> mein save rahegi. Dubara daalne ki zaroorat nahi hogi!
-                </p>
-              </div>
+              )}
 
-              {/* Feature 6: Groq Chat Model Selector & Refresh Button */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Groq Chat Model
-                  </label>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!groqKey) {
-                        setKeySaveMessage('⚠️ Pehle Groq API key save karein!');
-                        return;
-                      }
-                      setKeySaveMessage('🔄 Models list refresh ho rahi hai...');
-                      const res = await refreshModels(groqKey);
-                      if (res) {
-                        setKeySaveMessage(`✅ ${res.chatModels.length} models mil gaye! Active: ${res.chosenChat}`);
-                      } else {
-                        setKeySaveMessage('⚠️ Models refresh nahi ho sake. Key check karein.');
-                      }
-                    }}
-                    disabled={isLoadingModels || !groqKey}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0AA1DD] hover:text-sky-700 disabled:opacity-50 transition"
-                    title="Groq se models list update karein"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
-                    <span>Refresh models</span>
-                  </button>
-                </div>
-
-                <select
-                  value={selectedChatModel}
-                  onChange={(e) => {
-                    const newModel = e.target.value;
-                    setSelectedChatModel(newModel);
-                    localStorage.setItem('groq_chat_model', newModel);
-                    setKeySaveMessage(`✅ Model badal kar "${newModel}" kar diya!`);
-                    syncJarvisConfig(undefined, newModel, undefined);
-                  }}
-                  disabled={isLoadingModels || availableChatModels.length === 0}
-                  className="w-full py-2.5 px-3 text-xs md:text-sm font-mono border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD] focus:ring-2 focus:ring-sky-200"
+              {/* CARD 1: Groq Key (Open by default) */}
+              <div className="rounded-2xl border-2 border-slate-200 bg-white overflow-hidden shadow-xs min-h-0 transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('groqKey')}
+                  className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left transition"
                 >
-                  {availableChatModels.length === 0 ? (
-                    <option value={selectedChatModel}>
-                      {groqKey ? 'Loading models list...' : 'Pehle API key save karein'}
-                    </option>
-                  ) : (
-                    availableChatModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m} {m === selectedChatModel ? '★ (active)' : ''}
-                      </option>
-                    ))
-                  )}
-                </select>
-
-                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>
-                    STT Model: <strong className="font-mono text-slate-700">{selectedWhisperModel}</strong>
-                  </span>
-                  <span>{availableChatModels.length} models available</span>
-                </div>
-              </div>
-
-              {/* Language Control Setting */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Voice & Response Language
-                </label>
-                <select
-                  value={selectedLangMode}
-                  onChange={(e) => handleLangModeChange(e.target.value as LanguageMode)}
-                  className="w-full py-2.5 px-3 text-xs md:text-sm font-semibold border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD]"
-                >
-                  <option value="auto">🌐 Auto (English, Urdu, or Roman Urdu detect)</option>
-                  <option value="en">🇬🇧 English</option>
-                  <option value="ur">🇵🇰 اردو (Urdu Script)</option>
-                  <option value="roman_ur">💬 Roman Urdu (English alphabet only)</option>
-                </select>
-              </div>
-
-              {/* Doraemon Voice Sliders (Pitch & Rate) */}
-              <div className="p-3.5 bg-sky-50/70 rounded-2xl border-2 border-sky-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Volume2 className="w-4 h-4 text-[#0AA1DD]" />
-                    <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      Doraemon Voice Settings
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => speakReply('Nobita! Main Doraemon hoon, 22nd century se! Kaisi lagi meri awaz?')}
-                    className="px-2.5 py-1 rounded-lg bg-[#0AA1DD] text-white text-[11px] font-bold hover:bg-sky-600 active:scale-95 transition shadow-2xs flex items-center gap-1"
-                    title="Awaz sun kar test karein"
-                  >
-                    <span>Suno</span>
-                    <Volume2 className="w-3 h-3" />
-                  </button>
-                </div>
-
-                {/* Pitch Slider: 1.0 to 1.6, default 1.3 */}
-                <div>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-semibold text-slate-700">Pitch (Cute Doraemon Tone)</span>
-                    <span className="font-mono font-bold text-[#0AA1DD] bg-white px-2 py-0.5 rounded border border-sky-200 text-[11px]">
-                      {voicePitch.toFixed(2)} {voicePitch === 1.3 ? '★ default' : ''}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1.0"
-                    max="1.6"
-                    step="0.05"
-                    value={voicePitch}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setVoicePitch(val);
-                      localStorage.setItem('doraemon_voice_pitch', val.toString());
-                    }}
-                    className="w-full accent-[#0AA1DD] cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
-                    <span>1.0 (Normal)</span>
-                    <span>1.3 (Doraemon cute)</span>
-                    <span>1.6 (High)</span>
-                  </div>
-                </div>
-
-                {/* Rate Slider: 0.8 to 1.2, default 1.0 */}
-                <div>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-semibold text-slate-700">Rate (Speaking Speed)</span>
-                    <span className="font-mono font-bold text-[#0AA1DD] bg-white px-2 py-0.5 rounded border border-sky-200 text-[11px]">
-                      {voiceRate.toFixed(2)}x {voiceRate === 1.0 ? '★ default' : ''}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.8"
-                    max="1.2"
-                    step="0.05"
-                    value={voiceRate}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setVoiceRate(val);
-                      localStorage.setItem('doraemon_voice_rate', val.toString());
-                    }}
-                    className="w-full accent-[#0AA1DD] cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
-                    <span>0.8x (Slow)</span>
-                    <span>1.0x (Natural)</span>
-                    <span>1.2x (Fast)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* ========================================== */}
-              {/* FLOATING DORAEMON SECTION (JarvisBridge APK) */}
-              {/* Only exists inside APK; hide if undefined */}
-              {/* ========================================== */}
-              {(hasJarvisBridge || Boolean((window as unknown as CapacitorWindow)?.Capacitor?.Plugins?.JarvisBridge)) && (
-                <div className="p-4 bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-50/60 rounded-2xl border-2 border-sky-300 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-[#0AA1DD] text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                        🔔
-                      </div>
-                      <div>
-                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                          Floating Doraemon
-                        </h3>
-                        <p className="text-[10px] text-slate-500">Screen overlay assistant</p>
-                      </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-sky-100 text-[#0AA1DD] flex items-center justify-center font-bold">
+                      <Key className="w-4 h-4" />
                     </div>
-                    {bridgeStatus?.running && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Active
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Groq Key
+                      </h3>
+                      <p className="text-[10px] text-slate-500">
+                        {groqKey ? 'Key saved in localStorage' : 'API key needed for chat'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {groqKey && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        Saved ✅
                       </span>
                     )}
+                    {openSections.groqKey ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
                   </div>
+                </button>
 
-                  {/* 4. Status Display: JarvisBridge.status() -> {overlay, running, mic} */}
-                  {bridgeStatus && (
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className={`p-2 rounded-xl border ${bridgeStatus.running ? 'bg-white border-emerald-300 text-emerald-800 shadow-2xs' : 'bg-white/80 border-slate-200 text-slate-600'}`}>
-                        <div className="text-[10px] uppercase font-bold text-slate-400">Status</div>
-                        <div className="font-bold flex items-center justify-center gap-1 mt-0.5 text-xs">
-                          <span className={`w-2 h-2 rounded-full ${bridgeStatus.running ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                          <span>{bridgeStatus.running ? 'Running' : 'Stopped'}</span>
-                        </div>
-                      </div>
-
-                      <div className={`p-2 rounded-xl border ${bridgeStatus.overlay ? 'bg-white border-sky-300 text-sky-800 shadow-2xs' : 'bg-white/80 border-amber-300 text-amber-800'}`}>
-                        <div className="text-[10px] uppercase font-bold text-slate-400">Overlay</div>
-                        <div className="font-bold mt-0.5 text-xs">
-                          {bridgeStatus.overlay ? 'Allowed ✅' : 'Needed ⚠️'}
-                        </div>
-                      </div>
-
-                      <div className={`p-2 rounded-xl border ${bridgeStatus.mic ? 'bg-white border-emerald-300 text-emerald-800 shadow-2xs' : 'bg-white/80 border-amber-300 text-amber-800'}`}>
-                        <div className="text-[10px] uppercase font-bold text-slate-400">Mic</div>
-                        <div className="font-bold mt-0.5 text-xs">
-                          {bridgeStatus.mic ? 'Allowed ✅' : 'Needed ⚠️'}
-                        </div>
+                {openSections.groqKey && (
+                  <div className="p-3.5 space-y-3 border-t border-slate-100 min-h-0">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Groq API Key (starts with &quot;gsk_&quot;)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showKeyText ? 'text' : 'password'}
+                          value={keyInput}
+                          onChange={(e) => handleKeyInputChange(e.target.value)}
+                          onBlur={handleKeyInputBlur}
+                          placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxx..."
+                          className="w-full py-2.5 pl-3 pr-10 text-xs md:text-sm font-mono border-2 border-slate-300 rounded-xl outline-none focus:border-[#0AA1DD] focus:ring-2 focus:ring-sky-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowKeyText(!showKeyText)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                          title={showKeyText ? 'Hide key' : 'Show key'}
+                        >
+                          {showKeyText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
                     </div>
-                  )}
 
-                  {/* 2 & 3. Big ON Button & OFF Button */}
-                  <div className="space-y-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleStartOverlay}
-                      disabled={isOverlayLoading}
-                      className="w-full py-3 px-4 rounded-xl bg-[#0AA1DD] hover:bg-sky-600 active:scale-98 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      <span className="text-base">🔔</span>
-                      <span>Floating Doraemon ON</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleStopOverlay}
-                      disabled={isOverlayLoading}
-                      className="w-full py-2 px-4 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs shadow-2xs transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-                    >
-                      <span>⏹️</span>
-                      <span>Floating Doraemon OFF</span>
-                    </button>
-                  </div>
-
-                  {/* Feedback / Error Message */}
-                  {overlayMessage && (
-                    <div className={`p-2.5 rounded-xl text-xs font-semibold border ${
-                      overlayMessage.includes('Doraemon ab dusri apps')
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                        : overlayMessage.includes('Floating Doraemon band')
-                          ? 'bg-sky-50 border-sky-200 text-sky-900'
-                          : 'bg-amber-50 border-amber-200 text-amber-950'
-                    }`}>
-                      {overlayMessage}
+                    <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-900 leading-snug">
+                      ⚡ <strong>Auto-save:</strong> Key paste ya type karte hi 600ms baad khud save ho jayegi aur models refresh ho jayenge!
                     </div>
-                  )}
 
-                  {/* 5. Tip text */}
-                  <div className="p-2.5 rounded-xl bg-blue-100/70 border border-blue-200 text-[11px] text-slate-700 flex items-start gap-2">
-                    <span className="text-sm shrink-0">💡</span>
-                    <p className="leading-snug">
-                      Button ko dabake rakh kar bolo, ungli hataoge to jawab milega. Button ko ghumane ke liye jaldi se drag karo.
+                    <p className="text-[11px] text-slate-500">
+                      Yeh key phone ke <strong>localStorage</strong> mein save rahegi.
                     </p>
-                  </div>
-                </div>
-              )}
 
-              {/* Screen Reader Card */}
-              <div className="p-4 bg-gradient-to-br from-indigo-50/70 via-sky-50 to-blue-50/60 rounded-2xl border-2 border-indigo-200 shadow-xs space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                    📖
+                    {groqKey && (
+                      <div className="pt-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleDeleteKey}
+                          className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold flex items-center gap-1 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete Key</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      Screen Reader
-                    </h3>
-                    <p className="text-[10px] text-slate-500">Screen text padhne ka tareeqa</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2 text-xs text-slate-700 leading-relaxed">
-                  <p>
-                    <strong className="text-indigo-800">a)</strong> Pehle Floating Doraemon ON karein.
-                  </p>
-                  <p>
-                    <strong className="text-indigo-800">b)</strong> Jis app ya screen par text padhna ho wahan jayein.
-                  </p>
-                  <p>
-                    c) Floating Doraemon dabake bolo &apos;on screen reader&apos;. Nila frame aayega, usay padhne wali jagah par rakho (kono se bada chhota karo), phir Doraemon dabake bolo &apos;read&apos; (Urdu mein sunega) ya &apos;read in English&apos;. Band karne ke liye bolo &apos;screen reader off&apos;.
-                  </p>
-                  <p className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-medium">
-                    Frame ke upar ungli rakhne se neeche wali app touch nahi hoti. Scroll karna ho to &apos;screen reader off&apos; bolo.
-                  </p>
-                </div>
+                )}
               </div>
 
-              {/* Status or Toast Message */}
-              {keySaveMessage && (
-                <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-900 font-medium">
-                  {keySaveMessage}
-                </div>
-              )}
+              {/* CARD 2: Model and Language (Collapsed by default) */}
+              <div className="rounded-2xl border-2 border-slate-200 bg-white overflow-hidden shadow-xs min-h-0 transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('modelLang')}
+                  className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left transition"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Model and Language
+                      </h3>
+                      <p className="text-[10px] text-slate-500 truncate max-w-[190px]">
+                        {selectedChatModel} • {selectedLangMode}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {openSections.modelLang ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </button>
 
-              {/* Help & Free Key Guide */}
-              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-2.5">
-                <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-900 space-y-1">
-                  <p className="font-semibold">Key kahan se milegi?</p>
-                  <p>
-                    Groq Console se free API key le sakte hain:
-                  </p>
-                  <a
-                    href="https://console.groq.com/keys"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 font-bold text-[#0AA1DD] hover:underline"
-                  >
-                    console.groq.com/keys <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
+                {openSections.modelLang && (
+                  <div className="p-3.5 space-y-3.5 border-t border-slate-100 min-h-0">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Groq Chat Model
+                        </label>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!groqKey) {
+                              setKeySaveMessage('⚠️ Pehle Groq API key save karein!');
+                              return;
+                            }
+                            setKeySaveMessage('🔄 Models list refresh ho rahi hai...');
+                            const res = await refreshModels(groqKey);
+                            if (res) {
+                              setKeySaveMessage(`✅ ${res.chatModels.length} models mil gaye! Active: ${res.chosenChat}`);
+                            } else {
+                              setKeySaveMessage('⚠️ Models refresh nahi ho sake. Key check karein.');
+                            }
+                          }}
+                          disabled={isLoadingModels || !groqKey}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0AA1DD] hover:text-sky-700 disabled:opacity-50 transition"
+                          title="Groq se models list update karein"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
+                          <span>Refresh models</span>
+                        </button>
+                      </div>
+
+                      <select
+                        value={selectedChatModel}
+                        onChange={(e) => {
+                          const newModel = e.target.value;
+                          setSelectedChatModel(newModel);
+                          localStorage.setItem('groq_chat_model', newModel);
+                          setKeySaveMessage(`✅ Model badal kar "${newModel}" kar diya!`);
+                          syncJarvisConfig(undefined, newModel, undefined);
+                        }}
+                        disabled={isLoadingModels || availableChatModels.length === 0}
+                        className="w-full py-2.5 px-3 text-xs md:text-sm font-mono border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD] focus:ring-2 focus:ring-sky-200"
+                      >
+                        {availableChatModels.length === 0 ? (
+                          <option value={selectedChatModel}>
+                            {groqKey ? 'Loading models list...' : 'Pehle API key save karein'}
+                          </option>
+                        ) : (
+                          availableChatModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m} {m === selectedChatModel ? '★ (active)' : ''}
+                            </option>
+                          ))
+                        )}
+                      </select>
+
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>
+                          STT: <strong className="font-mono text-slate-700">{selectedWhisperModel}</strong>
+                        </span>
+                        <span>{availableChatModels.length} models available</span>
+                      </div>
+                    </div>
+
+                    {/* Voice & Response Language */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Voice &amp; Response Language
+                      </label>
+                      <select
+                        value={selectedLangMode}
+                        onChange={(e) => handleLangModeChange(e.target.value as LanguageMode)}
+                        className="w-full py-2.5 px-3 text-xs md:text-sm font-semibold border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD]"
+                      >
+                        <option value="auto">🌐 Auto (English, Urdu, or Roman Urdu detect)</option>
+                        <option value="en">🇬🇧 English</option>
+                        <option value="ur">🇵🇰 اردو (Urdu Script)</option>
+                        <option value="roman_ur">💬 Roman Urdu (English alphabet only)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Additional Options */}
-              <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleClearChat}
-                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Clear Chat
-                  </button>
-                </div>
+              {/* CARD 3: Doraemon Voice (Collapsed by default) */}
+              <div className="rounded-2xl border-2 border-slate-200 bg-white overflow-hidden shadow-xs min-h-0 transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('voice')}
+                  className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left transition"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                      <Volume2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Doraemon Voice
+                      </h3>
+                      <p className="text-[10px] text-slate-500">
+                        Pitch: {voicePitch.toFixed(2)} • Speed: {voiceRate.toFixed(2)}x
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {openSections.voice ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </button>
 
-                {groqKey && (
-                  <button
-                    onClick={handleDeleteKey}
-                    className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold flex items-center gap-1 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Delete Key
-                  </button>
+                {openSections.voice && (
+                  <div className="p-3.5 space-y-3.5 border-t border-slate-100 min-h-0">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Voice Tuning
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => speakReply('Nobita! Main Doraemon hoon, 22nd century se! Kaisi lagi meri awaz?')}
+                        className="px-2.5 py-1 rounded-lg bg-[#0AA1DD] text-white text-[11px] font-bold hover:bg-sky-600 active:scale-95 transition shadow-2xs flex items-center gap-1"
+                        title="Awaz sun kar test karein"
+                      >
+                        <span>Suno</span>
+                        <Volume2 className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Pitch Slider: 1.0 to 1.6, default 1.3 */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-semibold text-slate-700">Pitch (Cute Doraemon Tone)</span>
+                        <span className="font-mono font-bold text-[#0AA1DD] bg-sky-50 px-2 py-0.5 rounded border border-sky-200 text-[11px]">
+                          {voicePitch.toFixed(2)} {voicePitch === 1.3 ? '★ default' : ''}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1.0"
+                        max="1.6"
+                        step="0.05"
+                        value={voicePitch}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setVoicePitch(val);
+                          localStorage.setItem('doraemon_voice_pitch', val.toString());
+                        }}
+                        className="w-full accent-[#0AA1DD] cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                        <span>1.0 (Normal)</span>
+                        <span>1.3 (Doraemon cute)</span>
+                        <span>1.6 (High)</span>
+                      </div>
+                    </div>
+
+                    {/* Rate Slider: 0.8 to 1.2, default 1.0 */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-semibold text-slate-700">Rate (Speaking Speed)</span>
+                        <span className="font-mono font-bold text-[#0AA1DD] bg-sky-50 px-2 py-0.5 rounded border border-sky-200 text-[11px]">
+                          {voiceRate.toFixed(2)}x {voiceRate === 1.0 ? '★ default' : ''}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.8"
+                        max="1.2"
+                        step="0.05"
+                        value={voiceRate}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setVoiceRate(val);
+                          localStorage.setItem('doraemon_voice_rate', val.toString());
+                        }}
+                        className="w-full accent-[#0AA1DD] cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                        <span>0.8x (Slow)</span>
+                        <span>1.0x (Natural)</span>
+                        <span>1.2x (Fast)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CARD 4: Floating Doraemon (Collapsed by default) */}
+              <div className="rounded-2xl border-2 border-slate-200 bg-white overflow-hidden shadow-xs min-h-0 transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('floating')}
+                  className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left transition"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-sky-100 text-[#0AA1DD] flex items-center justify-center font-bold">
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Floating Doraemon
+                      </h3>
+                      <p className="text-[10px] text-slate-500">Screen overlay &amp; Screen Reader</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {bridgeStatus?.running && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        Active 🟢
+                      </span>
+                    )}
+                    {openSections.floating ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </button>
+
+                {openSections.floating && (
+                  <div className="p-3.5 space-y-3.5 border-t border-slate-100 min-h-0">
+                    {/* 4. Status Display: JarvisBridge.status() -> {overlay, running, mic} */}
+                    {bridgeStatus && (
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className={`p-2 rounded-xl border ${bridgeStatus.running ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-2xs' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                          <div className="text-[9px] uppercase font-bold text-slate-400">Status</div>
+                          <div className="font-bold flex items-center justify-center gap-1 mt-0.5 text-xs">
+                            <span className={`w-2 h-2 rounded-full ${bridgeStatus.running ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                            <span>{bridgeStatus.running ? 'Running' : 'Stopped'}</span>
+                          </div>
+                        </div>
+
+                        <div className={`p-2 rounded-xl border ${bridgeStatus.overlay ? 'bg-sky-50 border-sky-300 text-sky-800 shadow-2xs' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                          <div className="text-[9px] uppercase font-bold text-slate-400">Overlay</div>
+                          <div className="font-bold mt-0.5 text-xs">
+                            {bridgeStatus.overlay ? 'Allowed ✅' : 'Needed ⚠️'}
+                          </div>
+                        </div>
+
+                        <div className={`p-2 rounded-xl border ${bridgeStatus.mic ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-2xs' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                          <div className="text-[9px] uppercase font-bold text-slate-400">Mic</div>
+                          <div className="font-bold mt-0.5 text-xs">
+                            {bridgeStatus.mic ? 'Allowed ✅' : 'Needed ⚠️'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2 & 3. Big ON Button & OFF Button */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={handleStartOverlay}
+                        disabled={isOverlayLoading}
+                        className="w-full py-2.5 px-4 rounded-xl bg-[#0AA1DD] hover:bg-sky-600 active:scale-98 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <span className="text-sm">🔔</span>
+                        <span>Floating Doraemon ON</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStopOverlay}
+                        disabled={isOverlayLoading}
+                        className="w-full py-2 px-4 rounded-xl bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 font-bold text-xs shadow-2xs transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      >
+                        <span>⏹️</span>
+                        <span>Floating Doraemon OFF</span>
+                      </button>
+                    </div>
+
+                    {/* Feedback / Error Message */}
+                    {overlayMessage && (
+                      <div className={`p-2.5 rounded-xl text-xs font-semibold border ${
+                        overlayMessage.includes('Doraemon ab dusri apps')
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                          : overlayMessage.includes('Floating Doraemon band')
+                            ? 'bg-sky-50 border-sky-200 text-sky-900'
+                            : 'bg-amber-50 border-amber-200 text-amber-950'
+                      }`}>
+                        {overlayMessage}
+                      </div>
+                    )}
+
+                    {/* Tip text */}
+                    <div className="p-2.5 rounded-xl bg-blue-100/70 border border-blue-200 text-[11px] text-slate-700 flex items-start gap-2">
+                      <span className="text-sm shrink-0">💡</span>
+                      <p className="leading-snug">
+                        Button ko dabake rakh kar bolo, ungli hataoge to jawab milega. Button ko ghumane ke liye jaldi se drag karo.
+                      </p>
+                    </div>
+
+                    {/* Screen Reader Card (Step c and touch note preserved exactly) */}
+                    <div className="p-3 bg-gradient-to-br from-indigo-50/70 via-sky-50 to-blue-50/60 rounded-xl border border-indigo-200 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                          📖
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            Screen Reader
+                          </h4>
+                          <p className="text-[10px] text-slate-500">Screen text padhne ka tareeqa</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 text-[11px] text-slate-700 leading-relaxed">
+                        <p>
+                          <strong className="text-indigo-800">a)</strong> Pehle Floating Doraemon ON karein.
+                        </p>
+                        <p>
+                          <strong className="text-indigo-800">b)</strong> Jis app ya screen par text padhna ho wahan jayein.
+                        </p>
+                        <p>
+                          c) Floating Doraemon dabake bolo &apos;on screen reader&apos;. Nila frame aayega, usay padhne wali jagah par rakho (kono se bada chhota karo), phir Doraemon dabake bolo &apos;read&apos; (Urdu mein sunega) ya &apos;read in English&apos;. Band karne ke liye bolo &apos;screen reader off&apos;.
+                        </p>
+                        <p className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-900 font-medium">
+                          Frame ke upar ungli rakhne se neeche wali app touch nahi hoti. Scroll karna ho to &apos;screen reader off&apos; bolo.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CARD 5: Help (Collapsed by default) */}
+              <div className="rounded-2xl border-2 border-slate-200 bg-white overflow-hidden shadow-xs min-h-0 transition-all">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('help')}
+                  className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left transition"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                      <HelpCircle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Help
+                      </h3>
+                      <p className="text-[10px] text-slate-500">Free API key guide &amp; options</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {openSections.help ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </button>
+
+                {openSections.help && (
+                  <div className="p-3.5 space-y-3.5 border-t border-slate-100 min-h-0">
+                    {/* Requirement 5: Move "Key kahan se milegi?" help box into collapsed Help card */}
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2.5">
+                      <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-amber-900 space-y-1">
+                        <p className="font-semibold">Key kahan se milegi?</p>
+                        <p>
+                          Groq Console se free API key le sakte hain:
+                        </p>
+                        <a
+                          href="https://console.groq.com/keys"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-bold text-[#0AA1DD] hover:underline"
+                        >
+                          console.groq.com/keys <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Chat reset & details */}
+                    <div className="pt-1 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={handleClearChat}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Clear Chat History</span>
+                      </button>
+
+                      <span className="text-[10px] text-slate-400 font-mono">TG_META.DOREMON_AI_JARVIS</span>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Modal Bottom Actions */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setIsSettingsOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
-              >
-                Band Karo
-              </button>
-              <button
-                onClick={handleSaveKey}
-                className="px-5 py-2 rounded-xl bg-[#0AA1DD] hover:bg-sky-600 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 active:scale-95"
-              >
-                <Check className="w-4 h-4" />
-                Save Key
-              </button>
+            {/* 3. FIXED FOOTER AT THE BOTTOM WITH BIG SAVE BUTTON */}
+            <div
+              className="flex-shrink-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 pt-2.5 shadow-lg"
+              style={{
+                minHeight: '72px',
+                paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+              }}
+            >
+              <div className="flex items-center gap-2 max-w-md mx-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="py-3 px-3.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 transition shrink-0"
+                >
+                  Band Karo
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveKey}
+                  className="flex-1 py-3 px-5 rounded-xl bg-[#0AA1DD] hover:bg-sky-600 active:scale-98 text-white text-sm sm:text-base font-bold shadow-md transition flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                  <span>Save</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
