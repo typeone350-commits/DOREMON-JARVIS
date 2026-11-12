@@ -34,6 +34,7 @@ import {
 // FEATURE 5: APP_MAP & NATIVE LAUNCHER
 // ==========================================
 export type LanguageMode = 'auto' | 'en' | 'ur' | 'roman_ur';
+export type MessageBgStyle = 'transparent' | 'glass';
 
 interface AppTarget {
   key: string;
@@ -932,6 +933,18 @@ export default function App() {
     return (localStorage.getItem('doraemon_lang_mode') as LanguageMode) || 'auto';
   });
 
+  // Message background style: 'transparent' (default) or 'glass'
+  const [msgBgStyle, setMsgBgStyle] = useState<MessageBgStyle>(() => {
+    return (localStorage.getItem('doraemon_msg_bg') as MessageBgStyle) || 'transparent';
+  });
+
+  const handleMsgBgChange = (style: MessageBgStyle) => {
+    setMsgBgStyle(style);
+    localStorage.setItem('doraemon_msg_bg', style);
+    setKeySaveMessage(`✅ Message background: ${style === 'glass' ? 'Glass' : 'Transparent'}`);
+    setTimeout(() => setKeySaveMessage(''), 2000);
+  };
+
   // Doraemon voice settings: pitch (1.0 to 1.6, default 1.3) and rate (0.8 to 1.2, default 1.0)
   const [voicePitch, setVoicePitch] = useState<number>(() => {
     const saved = localStorage.getItem('doraemon_voice_pitch');
@@ -1079,6 +1092,10 @@ export default function App() {
   // Chat scroll container ref
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
+  // Doraemon centerpiece looping video ref & error state
+  const doraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoError, setVideoError] = useState<boolean>(false);
+
   // Keep isMutedRef in sync with isMuted
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -1101,10 +1118,13 @@ export default function App() {
     }
   }, [isSettingsOpen, refreshBridgeStatus]);
 
-  // Foreground & App resume listener: reset isBusy and refresh bridge status
+  // Foreground & App resume listener: reset isBusy, refresh bridge status, and pause/resume video
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.hidden) {
+        doraVideoRef.current?.pause();
+      } else {
+        doraVideoRef.current?.play().catch(() => {});
         if (chatAbortControllerRef.current) {
           chatAbortControllerRef.current.abort('foreground_resume');
           chatAbortControllerRef.current = null;
@@ -1124,12 +1144,15 @@ export default function App() {
       try {
         AppPlugin.addListener('appStateChange', (state: { isActive: boolean }) => {
           if (state.isActive) {
+            doraVideoRef.current?.play().catch(() => {});
             if (chatAbortControllerRef.current) {
               chatAbortControllerRef.current.abort('app_resume');
               chatAbortControllerRef.current = null;
             }
             setIsBusy(false);
             refreshBridgeStatus();
+          } else {
+            doraVideoRef.current?.pause();
           }
         }).then(handle => {
           appListenerHandle = handle;
@@ -2389,7 +2412,55 @@ Reply ONLY in the language the user last used. English message -> English reply.
 
       {/* CHAT MESSAGES CONTAINER (Scrollable) */}
       <main className="relative z-10 flex-1 w-full max-w-4xl mx-auto px-4 py-2 flex flex-col justify-end overflow-hidden">
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar max-h-[62vh] md:max-h-[68vh]">
+        {/* Transparent Looping Doraemon Video Centerpiece (Behind message bubbles) */}
+        {!videoError && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none z-0 transition-opacity duration-300"
+            style={{
+              opacity: isListening ? 1 : messages.length <= 2 ? 1 : 0.40,
+            }}
+            aria-hidden="true"
+          >
+            <div
+              className={`flex flex-col items-center justify-center transition-all duration-300 ${
+                isListening
+                  ? 'animate-dora-listening'
+                  : isBusy
+                    ? 'animate-dora-thinking'
+                    : isSpeaking
+                      ? 'animate-dora-speaking'
+                      : ''
+              }`}
+              style={{
+                transform: isListening ? 'scale(1.06)' : 'scale(1)',
+                height: '55%',
+                maxHeight: '420px',
+              }}
+            >
+              <video
+                ref={doraVideoRef}
+                src="doraemon_listen.webm"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="auto"
+                disablePictureInPicture
+                onError={() => setVideoError(true)}
+                className="h-full w-auto object-contain transition-all duration-300"
+              />
+              {/* Caption under Doraemon while listening */}
+              {isListening && (
+                <div className="mt-2 px-3 py-1 rounded-full bg-white/95 text-sky-900 text-xs font-bold shadow-md animate-pulse flex items-center gap-1.5 border border-sky-300 shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping inline-block" />
+                  <span>Sun raha hoon...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="relative z-10 flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar max-h-[62vh] md:max-h-[68vh]">
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -2407,43 +2478,66 @@ Reply ONLY in the language the user last used. English message -> English reply.
                 </div>
               )}
 
-              {/* 4D Pocket Shaped Chat Bubble */}
+              {/* Message Content Container (Transparent by default or Glass) */}
               <div
-                className={`relative max-w-[85%] md:max-w-[75%] p-4 shadow-md transition-all pocket-border ${
-                  msg.sender === 'user'
-                    ? 'bg-[#FEF08A] text-amber-950 border-2 border-[#FACC15]'
-                    : 'bg-white text-slate-800 border-2 border-[#0AA1DD]'
+                className={`relative max-w-[85%] md:max-w-[75%] transition-all ${
+                  msg.sender === 'user' ? 'text-right' : 'text-left'
                 }`}
+                style={
+                  msgBgStyle === 'glass'
+                    ? {
+                        background: 'rgba(255, 255, 255, 0.14)',
+                        backdropFilter: 'blur(6px)',
+                        WebkitBackdropFilter: 'blur(6px)',
+                        borderRadius: '18px',
+                        padding: '8px 12px',
+                      }
+                    : {
+                        background: 'transparent',
+                        border: 'none',
+                        boxShadow: 'none',
+                        backdropFilter: 'none',
+                        WebkitBackdropFilter: 'none',
+                        padding: '8px 12px',
+                      }
+                }
               >
-                {/* 4D Pocket Rim Seam Accent */}
-                <div
-                  className={`absolute top-0 left-4 right-4 h-1 border-b ${
-                    msg.sender === 'user' ? 'border-amber-400/60' : 'border-[#0AA1DD]/40'
+                {/* Message Text with High-Contrast Text Shadow */}
+                <p
+                  className={`text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words ${
+                    msg.sender === 'user' ? 'text-right' : 'text-left'
                   }`}
-                />
-
-                {/* Message Text with Clean Formatting */}
-                <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-normal break-words pt-1">
+                  style={{
+                    color: msg.sender === 'user' ? '#FFE066' : '#FFFFFF',
+                    fontWeight: 600,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.65), 0 0 8px rgba(0,0,0,0.35)',
+                  }}
+                >
                   {msg.text}
                 </p>
 
                 {/* Automatic App Launcher / In-App Search Card */}
                 {msg.appAction && (
-                  <div className="mt-2.5 p-2.5 px-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-2 shadow-xs">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className="mt-2.5 p-2.5 px-3 rounded-xl bg-black/30 border border-white/20 backdrop-blur-xs flex items-center justify-between gap-2 shadow-xs"
+                    style={{
+                      textShadow: '0 1px 2px rgba(0,0,0,0.65), 0 0 8px rgba(0,0,0,0.35)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 text-left">
                       <span className="w-8 h-8 rounded-lg bg-[#0AA1DD] text-white flex items-center justify-center shrink-0 shadow-xs">
                         {msg.searchQuery ? <Search className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
                       </span>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-800 truncate">{msg.appAction.name}</div>
+                        <div className="text-xs font-bold text-white truncate">{msg.appAction.name}</div>
                         {msg.searchQuery ? (
-                          <div className="text-[11px] text-sky-800 font-medium flex items-center gap-1 truncate">
-                            <span className="text-slate-500">Khoja:</span>
-                            <span className="font-semibold truncate text-[#0AA1DD]">"{msg.searchQuery}"</span>
+                          <div className="text-[11px] text-amber-200 font-semibold flex items-center gap-1 truncate">
+                            <span>Khoja:</span>
+                            <span className="truncate">&quot;{msg.searchQuery}&quot;</span>
                           </div>
                         ) : (
-                          <div className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                          <div className="text-[10px] text-emerald-300 font-semibold flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
                             App khol diya gaya hai
                           </div>
                         )}
@@ -2453,7 +2547,7 @@ Reply ONLY in the language the user last used. English message -> English reply.
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => executeAppLaunch(msg.appAction!, msg.searchUrl)}
-                        className="py-1 px-2.5 rounded-lg bg-white border border-sky-300 text-sky-800 text-[11px] font-bold hover:bg-sky-100 active:scale-95 transition shadow-xs flex items-center gap-1"
+                        className="py-1 px-2.5 rounded-lg bg-white/95 border border-white text-sky-900 text-[11px] font-bold hover:bg-white active:scale-95 transition shadow-xs flex items-center gap-1"
                         title={msg.searchQuery ? 'Search dobara chalayein' : 'Agar app nahi khula to dobara koshish karein'}
                       >
                         <RotateCcw className="w-3 h-3 text-[#0AA1DD]" />
@@ -2463,11 +2557,21 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   </div>
                 )}
 
-                {/* Footer: Timestamp & Voice indicator (Suno button removed - speech is automatic) */}
-                <div className="mt-2 flex items-center justify-between text-[10px] opacity-70 border-t border-black/5 pt-1">
+                {/* Footer: Timestamp & Voice indicator */}
+                <div
+                  className={`mt-1.5 flex items-center ${
+                    msg.sender === 'user' ? 'justify-end' : 'justify-between'
+                  } text-[11px] gap-2`}
+                  style={{
+                    opacity: 0.7,
+                    color: msg.sender === 'user' ? '#FFE066' : '#FFFFFF',
+                    fontWeight: 600,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.65), 0 0 8px rgba(0,0,0,0.35)',
+                  }}
+                >
                   <span>{msg.timestamp}</span>
                   {msg.isVoiceInput && (
-                    <span className="flex items-center gap-0.5 text-amber-800">
+                    <span className="flex items-center gap-0.5">
                       <Mic className="w-2.5 h-2.5" />
                       <span>Voice</span>
                     </span>
@@ -2493,11 +2597,38 @@ Reply ONLY in the language the user last used. English message -> English reply.
                   <div className="w-1.5 h-1.5 rounded-full bg-[#E60012] absolute top-2" />
                 </div>
               </div>
-              <div className="p-3.5 bg-white border-2 border-[#0AA1DD] pocket-border shadow-md flex items-center gap-1.5">
-                <span className="text-xs font-bold text-[#0AA1DD]">Doraemon soch raha hai</span>
-                <span className="w-2 h-2 rounded-full bg-[#0AA1DD] animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 rounded-full bg-[#0AA1DD] animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 rounded-full bg-[#0AA1DD] animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div
+                className="flex items-center gap-1.5 transition-all"
+                style={
+                  msgBgStyle === 'glass'
+                    ? {
+                        background: 'rgba(255, 255, 255, 0.14)',
+                        backdropFilter: 'blur(6px)',
+                        WebkitBackdropFilter: 'blur(6px)',
+                        borderRadius: '18px',
+                        padding: '8px 12px',
+                      }
+                    : {
+                        background: 'transparent',
+                        border: 'none',
+                        boxShadow: 'none',
+                        backdropFilter: 'none',
+                        WebkitBackdropFilter: 'none',
+                        padding: '8px 12px',
+                      }
+                }
+              >
+                <span
+                  className="text-xs font-semibold text-white"
+                  style={{
+                    textShadow: '0 1px 2px rgba(0,0,0,0.65), 0 0 8px rgba(0,0,0,0.35)',
+                  }}
+                >
+                  Doraemon soch raha hai
+                </span>
+                <span className="w-2 h-2 rounded-full bg-white animate-bounce shadow-xs" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 rounded-full bg-white animate-bounce shadow-xs" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 rounded-full bg-white animate-bounce shadow-xs" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           )}
@@ -2834,6 +2965,21 @@ Reply ONLY in the language the user last used. English message -> English reply.
                         <option value="en">🇬🇧 English</option>
                         <option value="ur">🇵🇰 اردو (Urdu Script)</option>
                         <option value="roman_ur">💬 Roman Urdu (English alphabet only)</option>
+                      </select>
+                    </div>
+
+                    {/* Message background (Transparent or Glass) */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Message background
+                      </label>
+                      <select
+                        value={msgBgStyle}
+                        onChange={(e) => handleMsgBgChange(e.target.value as MessageBgStyle)}
+                        className="w-full py-2.5 px-3 text-xs md:text-sm font-semibold border-2 border-slate-300 rounded-xl bg-white outline-none focus:border-[#0AA1DD]"
+                      >
+                        <option value="transparent">Transparent (default - no background)</option>
+                        <option value="glass">Glass (frosted blur effect)</option>
                       </select>
                     </div>
                   </div>
